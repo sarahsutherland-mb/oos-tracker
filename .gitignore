@@ -19,6 +19,10 @@ dist/
 playwright-report/
 test-results/
 
+# Recon scratch (delete once retailer checkers are stable)
+recon/
+recon_*.py
+
 # OS
 .DS_Store
 Thumbs.db

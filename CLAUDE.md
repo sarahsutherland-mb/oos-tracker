@@ -2,23 +2,30 @@
 
 ## What we're building
 
-An automated weekly stock checker for ~175 Megababe SKUs across 11 retailers.
+An automated weekly stock checker for ~154 Megababe SKUs across 10 retailers.
 Output is a static dashboard listing **which products are out of stock and
 where** — that's the primary thing the user wants to see — plus Slack alerts
 when stock changes.
 
-Eight retailers are checked automatically. Three (Target, Walmart, ASOS) have
-serious anti-bot protection so the user manually checks them and logs status
-in a Google Sheet that this tool reads.
+Five retailers are checked automatically. Five (Target, Walmart, ASOS,
+Anthropologie, CVS) have serious anti-bot protection so the user manually
+checks them and logs status in a Google Sheet that this tool reads.
+Anthropologie and CVS were originally planned as automated but were moved to
+the manual sheet on 2026-04-30 — recon found PerimeterX (Anthropologie) and
+Akamai-style 403s (CVS) that default Playwright Chromium can't bypass, and
+the manual route is cheaper than investing in stealth tooling.
 
 Runs unattended via GitHub Actions. Zero hosting cost. No paid APIs.
 
 ## Stack
 
 - **Python 3.11+**
-- **Playwright** for medium-difficulty retailers (Anthropologie, Nordstrom,
-  Cult Beauty, Beauty Bay, Boots, CVS)
-- **httpx** for Shopify endpoints (Gee Beauty, Goop) and Google Sheet fetch
+- **httpx** for Shopify-style endpoints (Gee Beauty), JSON-LD-rich PDPs
+  (Cult Beauty), Google Sheet fetch
+- **Playwright** for retailers that need a real browser to load JSON-LD
+  or to bypass simple Cloudflare (Goop, Nordstrom). Boots is currently a
+  stub — its PDPs are Incapsula-blocked and bypass tooling hasn't been
+  decided yet.
 - **Google Sheets** as the manual data source for Target, Walmart, ASOS —
   read via the public "publish to web as CSV" URL, no API auth needed
 - **SQLite** for state and history (single file in repo)
@@ -29,16 +36,19 @@ Runs unattended via GitHub Actions. Zero hosting cost. No paid APIs.
 
 | Source | Retailers | SKU count |
 |---|---|---|
-| Shopify JSON | Gee Beauty, Goop | 22 |
-| Playwright | Anthropologie, Nordstrom, Cult Beauty, Beauty Bay, Boots, CVS | 101 |
-| Manual via Google Sheet | Target, Walmart, ASOS | 52 |
-| **Total** | **11 retailers** | **175** |
+| Shopify JSON (httpx) | Gee Beauty | 20 |
+| httpx + JSON-LD | Cult Beauty | 23 |
+| Playwright + JSON-LD | Nordstrom, Goop | 27 |
+| Playwright (deferred — Incapsula stub) | Boots | 5 |
+| Manual via Google Sheet | Target, Walmart, ASOS, Anthropologie, CVS | 79 |
+| **Total** | **10 retailers** | **154** |
 
 ## Repo layout
 
 ```
 oos-tracker/
 ├── CLAUDE.md                     # this file
+├── RETAILER_KNOWLEDGE.md         # user's per-retailer OOS signals + brand pages
 ├── README.md
 ├── pyproject.toml                # uv or poetry
 ├── .env.example
@@ -53,7 +63,6 @@ oos-tracker/
 │   │   ├── nordstrom.py          # Playwright
 │   │   ├── anthropologie.py
 │   │   ├── cult_beauty.py
-│   │   ├── beauty_bay.py
 │   │   ├── boots.py
 │   │   └── cvs.py
 │   ├── db.py                     # SQLite schema + queries
@@ -69,27 +78,38 @@ oos-tracker/
 
 ## Stock detection logic per retailer
 
-The user's existing tracker documents these criteria — implement faithfully.
+The table below is the original spec. The authoritative source going
+forward is **`RETAILER_KNOWLEDGE.md`** — the user maintains it with
+hands-on observations of how each retailer signals OOS, brand-page
+URLs, multi-variant PDPs, and known edge cases. **Every Playwright
+checker MUST consult `RETAILER_KNOWLEDGE.md` for that retailer's
+specific signals** before relying on the generic patterns below. When
+the file says "log raw signals into `notes`", do that — the user wants
+visibility into unexpected page states rather than silent guesses.
 
 | Retailer | Approach | In-stock signal | OOS signal |
 |---|---|---|---|
 | Gee Beauty | append `.json` to URL (it's Shopify) | any `variants[].available == true` | all variants false |
-| Goop | same Shopify trick | same | same |
-| Anthropologie | Playwright | "Add to basket" enabled | button absent/disabled |
-| Nordstrom | Playwright + JSON-LD | "Add to bag" visible, no "sold out" | "sold out" present |
-| Cult Beauty | Playwright | "Add to basket" enabled | "Notify me when available" |
-| Beauty Bay | Playwright | "Add to bag" enabled | absent |
-| Boots | Playwright | "Add to basket" present | absent |
-| CVS | Playwright | any of pickup / same-day-delivery / shipping | none |
-| Target | **Manual** — read from Google Sheet | user marks in_stock | user marks oos |
-| Walmart | **Manual** | same | same |
-| ASOS | **Manual** | same | same |
+| Goop | originally Shopify; **moved to Playwright** (PDP returns 403, see `RETAILER_KNOWLEDGE.md`) | "Add to bag" present | "Add to waitlist" replaces it |
+| Anthropologie | Playwright | "Add to basket" enabled | button absent/disabled, or PDP missing from brand page |
+| Nordstrom | Playwright + JSON-LD | "Add to bag" visible, no "sold out" | "sold out" present, or PDP missing from brand page |
+| Cult Beauty | Playwright | "Add to basket" enabled | "Notify me when available", or per-size button disabled, or PDP missing from brand page |
+| Boots | Playwright | "Add to basket" present | absent (no live OOS observed yet — log raw state) |
+| CVS | Playwright | any of pickup / same-day-delivery / shipping | none (no live OOS observed yet — log raw state) |
+| Target | **Manual** — read from Google Sheet | user marks in_stock | "Check stores" gray button, all fulfillment unavailable |
+| Walmart | **Manual** | same | PDP no longer appears on brand page |
+| ASOS | **Manual** | same | PDP no longer appears in `megababe` search results |
 
 Every checker (including the manual sheet one) returns one of:
 - `IN_STOCK`
 - `OOS`
 - `ERROR` (404, redirect to brand page, page broken, or marked error in sheet)
 - `UNKNOWN` (page loaded but signal unclear, or sheet row missing/blank)
+
+Note: many retailer ERRORs are actually OOS in disguise (the PDP got
+delisted because the product is unavailable). The brand-page
+reconciliation step (build step 10) downgrades these to OOS using the
+brand page URLs in `RETAILER_KNOWLEDGE.md`.
 
 ## Manual Google Sheet — setup and format
 
@@ -256,13 +276,35 @@ Don't try to build everything at once. Order of operations:
    the published Google Sheet CSV. After this, 74 SKUs working.
 6. **One Playwright checker** (Cult Beauty is a good pick) — get the
    browser automation working end-to-end before doing the rest.
+   Consult `RETAILER_KNOWLEDGE.md` for the per-retailer signals; don't
+   rely on the generic table alone.
 7. **Remaining Playwright checkers** — Anthropologie, Nordstrom, Beauty
-   Bay, Boots, CVS.
+   Bay, Boots, CVS, plus Goop (moved here from Shopify). Same rule:
+   each one starts by re-reading the relevant section of
+   `RETAILER_KNOWLEDGE.md`. Log raw signals (button text, presence,
+   variant state) into the `notes` field so unexpected page states
+   stay debuggable.
 8. **Orchestrator** — `run_check.py` loops products, dispatches to the
    right checker, writes results.
 9. **Dashboard generator** — static HTML, OOS-first layout.
-10. **Slack notifier**.
-11. **GitHub Actions workflow**. Test with `workflow_dispatch` manual
+10. **Brand-page reconciliation** — a second pass that runs after PDP
+    checks. For each retailer, scrape the brand page URL listed in
+    `RETAILER_KNOWLEDGE.md` (Playwright for retailers that already use
+    it, `/collections/megababe/products.json` for Shopify), then:
+    a. Downgrade this run's `ERROR` results to `OOS` with note
+       `reconciled-via-brand-page`. (Per the user, a missing PDP is
+       overwhelmingly an OOS signal, not delisting.)
+    b. Diff the brand-page product list against `products.csv` for that
+       retailer; insert any new names into a new `new_products` table
+       (schema in `RETAILER_KNOWLEDGE.md`) for the user to triage.
+    Adds two dashboard sections: "New products detected" (above "URLs
+    to fix") and a reconciled-OOS indicator inside "Currently out of
+    stock". Name matching is substring + case-insensitive +
+    accent-insensitive; ambiguous matches go to human review rather
+    than auto-resolving — see `RETAILER_KNOWLEDGE.md` for the matching
+    rules and edge cases (Mini vs full-size, etc.).
+11. **Slack notifier**.
+12. **GitHub Actions workflow**. Test with `workflow_dispatch` manual
     run before trusting the cron.
 
 After step 5 you have something genuinely useful — Shopify retailers
@@ -276,7 +318,7 @@ plus all manual entries flowing into a system. Don't block on Playwright.
   options: keep the repo private and view `docs/index.html` via GitHub's
   raw file view, or use a password-protected hosting service.)
 - Do I want to track per-variant stock for retailers with size variants
-  (Cult Beauty, Beauty Bay), or treat each PDP as one row?
+  (Cult Beauty), or treat each PDP as one row?
 
 ## Non-goals (don't build these unless I ask)
 

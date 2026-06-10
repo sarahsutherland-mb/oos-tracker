@@ -1,0 +1,5460 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Megababe OOS Tracker</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+         max-width: 920px; margin: 0 auto; padding: 0 18px 64px; color: #1a1a1a;
+         background: #f7f6f4; line-height: 1.5; }
+
+  /* Header */
+  .site-header {
+    background: #fff; border-bottom: 1px solid #e8e4e0;
+    padding: 20px 0 16px; margin: 0 -18px 28px; padding-left: 18px; padding-right: 18px;
+  }
+  .header-top { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  h1 { font-size: 20px; font-weight: 700; margin: 0; letter-spacing: -0.3px; color: #1a1a1a; }
+  .header-pill {
+    display: inline-flex; align-items: center; gap: 5px;
+    background: #fde8e8; color: #b83232; font-size: 13px; font-weight: 600;
+    padding: 3px 10px; border-radius: 20px;
+  }
+  .header-pill.all-good { background: #e6f4ec; color: #2a7a47; }
+  .header-meta { margin-top: 5px; color: #999; font-size: 12px; }
+
+  /* Sections */
+  h2 { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px;
+       color: #888; margin: 28px 0 12px; }
+  .card { background: #fff; border: 1px solid #e8e4e0; border-radius: 10px;
+          padding: 0; margin: 0 0 10px; overflow: hidden; }
+
+  /* Typography helpers */
+  .muted { color: #999; font-size: 13px; }
+  .subtle { color: #aaa; font-size: 12px; }
+  .src-tag { font-size: 10px; font-weight: 600; text-transform: uppercase;
+             letter-spacing: 0.6px; color: #bbb; }
+  .empty { color: #aaa; font-style: italic; font-size: 14px; padding: 14px 16px; }
+
+  /* Status badges */
+  .badge {
+    display: inline-block; font-size: 11px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.4px;
+    padding: 2px 7px; border-radius: 4px;
+  }
+  .badge-OOS { background: #fde8e8; color: #b83232; }
+  .badge-IN_STOCK { background: #e6f4ec; color: #2a7a47; }
+  .badge-ERROR { background: #fff3cd; color: #856404; }
+  .badge-UNKNOWN { background: #f0f0f0; color: #777; }
+  .badge-NO_CHECK { background: #f0f0f0; color: #999; }
+
+  /* Inline status colours (for summary tables) */
+  .status-OOS { color: #b83232; font-weight: 600; }
+  .status-IN_STOCK { color: #2a7a47; }
+  .status-ERROR, .status-UNKNOWN { color: #856404; }
+  .status-NO_CHECK { color: #aaa; }
+
+  /* Tables */
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: left; padding: 9px 14px; border-bottom: 1px solid #f0ece8; vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  th { font-weight: 600; color: #888; font-size: 12px; text-transform: uppercase;
+       letter-spacing: 0.4px; background: #faf9f7; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  a { color: #c05a78; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .url-cell { word-break: break-all; font-size: 12px; }
+
+  /* View toggle — CSS-only, no JS */
+  input[name="view"] { position: absolute; left: -9999px; }
+  .view-tabs {
+    display: flex; flex-wrap: wrap; gap: 2px; margin: 0 0 20px;
+    background: #ede9e5; padding: 3px; border-radius: 8px;
+    width: fit-content; max-width: 100%;
+  }
+  .view-tabs label {
+    padding: 6px 14px; cursor: pointer; user-select: none; border-radius: 6px;
+    color: #888; font-size: 13px; font-weight: 600; transition: background 0.1s;
+    white-space: nowrap;
+  }
+  .view-tabs label:hover { color: #555; }
+  .view-content { display: none; }
+  #view-retailer:checked ~ #content-retailer,
+  #view-sku:checked ~ #content-sku,
+  #view-summary:checked ~ #content-summary,
+  #view-changes:checked ~ #content-changes,
+  #view-new-products:checked ~ #content-new-products,
+  #view-urls:checked ~ #content-urls { display: block; }
+  #view-retailer:checked ~ .view-tabs label[for="view-retailer"],
+  #view-sku:checked ~ .view-tabs label[for="view-sku"],
+  #view-summary:checked ~ .view-tabs label[for="view-summary"],
+  #view-changes:checked ~ .view-tabs label[for="view-changes"],
+  #view-new-products:checked ~ .view-tabs label[for="view-new-products"],
+  #view-urls:checked ~ .view-tabs label[for="view-urls"] {
+    background: #fff; color: #1a1a1a; box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  }
+
+  /* By-SKU view */
+  .product-block { padding: 12px 16px; border-bottom: 1px solid #f0ece8; }
+  .product-block:last-child { border-bottom: none; }
+  .product-name { font-weight: 600; font-size: 15px; margin-bottom: 6px; }
+  .retailer-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 3px; }
+  .retailer-list li { font-size: 13px; display: flex; align-items: center; gap: 8px; }
+  .retailer-name { font-weight: 500; min-width: 130px; }
+
+  /* By-retailer view */
+  .retailer-block { padding: 16px; border-bottom: 1px solid #f0ece8; }
+  .retailer-block:last-child { border-bottom: none; }
+  .retailer-header { display: flex; align-items: baseline; gap: 10px; margin-bottom: 6px; }
+  .retailer-h3 { font-size: 15px; font-weight: 700; margin: 0; }
+  .retailer-counts { font-size: 13px; color: #aaa; display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 10px; }
+  .retailer-counts span { display: inline-flex; align-items: center; gap: 4px; }
+  .retailer-oos-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 5px; }
+  .retailer-oos-list li { font-size: 14px; display: flex; align-items: center; gap: 8px; }
+  details.other-products { margin-top: 12px; }
+  details.other-products summary {
+    cursor: pointer; outline: none; color: #999; font-size: 13px;
+    user-select: none; list-style: none; display: inline-flex; align-items: center; gap: 5px;
+  }
+  details.other-products summary::-webkit-details-marker { display: none; }
+  details.other-products summary::before {
+    content: "▸"; font-size: 10px; transition: transform 0.15s;
+  }
+  details.other-products[open] summary::before { transform: rotate(90deg); }
+  details.other-products summary:hover { color: #666; }
+  details.other-products[open] summary { margin-bottom: 8px; }
+
+  /* History matrix */
+  .matrix-table th.matrix-col { text-align: center; width: 72px; }
+  .matrix-table td.matrix-cell { text-align: center; padding: 7px 6px; }
+  .matrix-table .badge { font-size: 10px; padding: 2px 5px; }
+  .matrix-retailer-row td {
+    background: #f5f2ef; font-weight: 700; font-size: 12px;
+    text-transform: uppercase; letter-spacing: 0.6px; color: #555;
+    padding: 8px 14px; border-bottom: 1px solid #e8e4e0;
+  }
+  .matrix-expand-row > td { padding: 0; border-bottom: 1px solid #e8e4e0; }
+  .matrix-expand-row details.other-products { padding: 8px 14px; }
+  .matrix-expand-row details.other-products summary { font-size: 12px; }
+  .matrix-inner { margin-top: 6px; }
+  .matrix-inner td { border-bottom: 1px solid #f7f4f1; font-size: 13px; }
+  .matrix-inner tr:last-child td { border-bottom: none; }
+
+  .footer { color: #bbb; font-size: 11px; margin-top: 40px; text-align: center; }
+
+  @media (max-width: 600px) {
+    .retailer-name { min-width: 0; }
+    .header-top { flex-direction: column; gap: 6px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="site-header">
+  <div class="header-top">
+    <h1>Megababe OOS Tracker</h1>
+    
+    <span class="header-pill">43 out of stock</span>
+    
+  </div>
+  <div class="header-meta">
+    Last run Wed Jun 10, 2026 · 2:59 PM UTC · 156 SKUs tracked
+  </div>
+</div>
+
+<input type="radio" name="view" id="view-retailer" checked>
+<input type="radio" name="view" id="view-sku">
+<input type="radio" name="view" id="view-summary">
+<input type="radio" name="view" id="view-changes">
+<input type="radio" name="view" id="view-new-products">
+<input type="radio" name="view" id="view-urls">
+<div class="view-tabs">
+  <label for="view-retailer">By Retailer</label>
+  <label for="view-sku">By SKU</label>
+  <label for="view-changes">Stock History</label>
+  <label for="view-summary">Per Retailer Summary</label>
+  <label for="view-new-products">New Products</label>
+  <label for="view-urls">URLs to Fix</label>
+</div>
+
+<section class="view-content" id="content-sku">
+
+<h2>Currently out of stock</h2>
+
+<div class="card">
+
+<div class="product-block">
+  <div class="product-name">
+    Après Shave - 3 oz
+    <span class="muted" style="font-weight:400; font-size:13px;">— 1 retailer</span>
+  </div>
+  <ul class="retailer-list">
+  
+    <li>
+      <span class="retailer-name">Target</span>
+      <span class="subtle">since 13 days ago</span>
+      <span class="src-tag">manual</span>
+    </li>
+  
+  </ul>
+</div>
+
+<div class="product-block">
+  <div class="product-name">
+    Beachy Pits
+    <span class="muted" style="font-weight:400; font-size:13px;">— 2 retailers</span>
+  </div>
+  <ul class="retailer-list">
+  
+    <li>
+      <span class="retailer-name">Anthropologie</span>
+      <span class="subtle">since today</span>
+      <span class="src-tag">manual</span>
+    </li>
+  
+    <li>
+      <span class="retailer-name">Target</span>
+      <span class="subtle">since today</span>
+      <span class="src-tag">manual</span>
+    </li>
+  
+  </ul>
+</div>
+
+<div class="product-block">
+  <div class="product-name">
+    Best of Megababe Trio
+    <span class="muted" style="font-weight:400; font-size:13px;">— 1 retailer</span>
+  </div>
+  <ul class="retailer-list">
+  
+    <li>
+      <span class="retailer-name">Cult Beauty</span>
+      <span class="subtle">since 13 days ago</span>
+      <span class="src-tag">automated</span>
+    </li>
+  
+  </ul>
+</div>
+
+<div class="product-block">
+  <div class="product-name">
+    Bidet Bar
+    <span class="muted" style="font-weight:400; font-size:13px;">— 1 retailer</span>
+  </div>
+  <ul class="retailer-list">
+  
+    <li>
+      <span class="retailer-name">Cult Beauty</span>
+      <span class="subtle">since today</span>
+      <span class="src-tag">automated</span>
+    </li>
+  
+  </ul>
+</div>
+
+<div class="product-block">
+  <div class="product-name">
+    Blade Bar
+    <span class="muted" style="font-weight:400; font-size:13px;">— 1 retailer</span>
+  </div>
+  <ul class="retailer-list">
+  
+    <li>
+      <span class="retailer-name">Target</span>
+      <span class="subtle">since Thu Apr 30</span>
+      <span class="src-tag">manual</span>
+    </li>
+  
+  </ul>
+</div>
+
+<div class="product-block">
+  <div class="product-name">
+    Body Dust
+    <span class="muted" style="font-weight:400; font-size:13px;">— 4 retailers</span>
+  </div>
+  <ul class="retailer-list">
+  
+    <li>
+      <span class="retailer-name">Anthropologie</span>
+      <span class="subtle">since 13 days ago</span>
+      <span class="src-tag">manual</span>
+    </li>
+  
+    <li>
+      <span class="retailer-name">Cult Beauty</span>
+      <span class="subtle">since 13 days ago</span>
+      <span class="src-tag">automated</span>
+    </li>
+  
+    <li>
+      <span class="retailer-name">Target</span>
+      <span class="subtle">since today</span>
+      <span class="src-tag">manual</span>
+    </li>
+  
+    <li>
+      <span class="retailer-name">Walmart</span>
+      <span class="subtle">since Thu Apr 30</span>
+      <span class="src-tag">manual</span>
+    </li>
+  
+  </ul>
+</div>
+
+<div class="product-block">
+  <div class="product-name">
+    Body Dust Mini
+    <span class="muted" style="font-weight:400; font-size:13px;">— 1 retailer</span>
+  </div>
+  <ul class="retailer-list">
+  
+    <li>
+      <span class="retailer-name">Anthropologie</span>
+      <span class="subtle">since today</span>
+      <span class="src-tag">manual</span>
+    </li>
+  
+  </ul>
+</div>
+
+<div class="product-block">
+  <div class="product-name">
+    Bust Dust
+    <span class="muted" style="font-weight:400; font-size:13px;">— 5 retailers</span>
+  </div>
+  <ul class="retailer-list">
+  
+    <li>
+      <span class="retailer-name">Anthropologie</span>
+      <span class="subtle">since Thu Apr 30</span>
+      <span class="src-tag">manual</span>
+    </li>
+  
+    <li>
+      <span class="retailer-name">Cult Beauty</span>
+      <span class="subtle">since today</span>
+      <span class="src-tag">automated</span>
+    </li>
+  
+    <li>
+      <span class="retailer-name">Gee Beauty</span>
+      <span class="subtle">since Thu Apr 30</span>
+      <span class="src-tag">automated</span>
+    </li>
+  
+    <li>
+      <span class="retailer-name">Target</span>
+      <span class="subtle">since 13 days ago</span>
+      <span class="src-tag">manual</span>
+    </li>
+  
+    <li>
+      <span class="retailer-name">Walmart</span>
+      <span class="subtle">since 13 days ago</span>
+      <span class="src-tag">manual</span>
+    </li>
+  
+  </ul>
+</div>
+
+<div class="product-block">
+  <div class="product-name">
+    Chest-o Presto
+    <span class="muted" style="font-weight:400; font-size:13px;">— 1 retailer</span>
+  </div>
+  <ul class="retailer-list">
+  
+    <li>
+      <span class="retailer-name">Anthropologie</span>
+      <span class="subtle">since 13 days ago</span>
+      <span class="src-tag">manual</span>
+    </li>
+  
+  </ul>
+</div>
+
+<div class="product-block">
+  <div class="product-name">
+    Coco Deo
+    <span class="muted" style="font-weight:400; font-size:13px;">— 1 retailer</span>
+  </div>
+  <ul class="retailer-list">
+  
+    <li>
+      <span class="retailer-name">ASOS</span>
+      <span class="subtle">since Thu Apr 30</span>
+      <span class="src-tag">manual</span>
+    </li>
+  
+  </ul>
+</div>
+
+<div class="product-block">
+  <div class="product-name">
+    Cream Deo
+    <span class="muted" style="font-weight:400; font-size:13px;">— 1 retailer</span>
+  </div>
+  <ul class="retailer-list">
+  
+    <li>
+      <span class="retailer-name">ASOS</span>
+      <span class="subtle">since today</span>
+      <span class="src-tag">manual</span>
+    </li>
+  
+  </ul>
+</div>
+
+<div class="product-block">
+  <div class="product-name">
+    Dust Puff
+    <span class="muted" style="font-weight:400; font-size:13px;">— 2 retailers</span>
+  </div>
+  <ul class="retailer-list">
+  
+    <li>
+      <span class="retailer-name">Cult Beauty</span>
+      <span class="subtle">since today</span>
+      <span class="src-tag">automated</span>
+    </li>
+  
+    <li>
+      <span class="retailer-name">Target</span>
+      <span class="subtle">since 13 days ago</span>
+      <span class="src-tag">manual</span>
+    </li>
+  
+  </ul>
+</div>
+
+<div class="product-block">
+  <div class="product-name">
+    Geo Deo
+    <span class="muted" style="font-weight:400; font-size:13px;">— 4 retailers</span>
+  </div>
+  <ul class="retailer-list">
+  
+    <li>
+      <span class="retailer-name">Anthropologie</span>
+      <span class="subtle">since 13 days ago</span>
+      <span class="src-tag">manual</span>
+    </li>
+  
+    <li>
+      <span class="retailer-name">Cult Beauty</span>
+      <span class="subtle">since 13 days ago</span>
+      <span class="src-tag">automated</span>
+    </li>
+  
+    <li>
+      <span class="retailer-name">Target</span>
+      <span class="subtle">since today</span>
+      <span class="src-tag">manual</span>
+    </li>
+  
+    <li>
+      <span class="retailer-name">Walmart</span>
+      <span class="subtle">since Thu Apr 30</span>
+      <span class="src-tag">manual</span>
+    </li>
+  
+  </ul>
+</div>
+
+<div class="product-block">
+  <div class="product-name">
+    Happy Pits
+    <span class="muted" style="font-weight:400; font-size:13px;">— 1 retailer</span>
+  </div>
+  <ul class="retailer-list">
+  
+    <li>
+      <span class="retailer-name">Target</span>
+      <span class="subtle">since today</span>
+      <span class="src-tag">manual</span>
+    </li>
+  
+  </ul>
+</div>
+
+<div class="product-block">
+  <div class="product-name">
+    Le Tush
+    <span class="muted" style="font-weight:400; font-size:13px;">— 1 retailer</span>
+  </div>
+  <ul class="retailer-list">
+  
+    <li>
+      <span class="retailer-name">Cult Beauty</span>
+      <span class="subtle">since Thu Apr 30</span>
+      <span class="src-tag">automated</span>
+    </li>
+  
+  </ul>
+</div>
+
+<div class="product-block">
+  <div class="product-name">
+    Magic Powder
+    <span class="muted" style="font-weight:400; font-size:13px;">— 2 retailers</span>
+  </div>
+  <ul class="retailer-list">
+  
+    <li>
+      <span class="retailer-name">Anthropologie</span>
+      <span class="subtle">since 13 days ago</span>
+      <span class="src-tag">manual</span>
+    </li>
+  
+    <li>
+      <span class="retailer-name">Target</span>
+      <span class="subtle">since Thu Apr 30</span>
+      <span class="src-tag">manual</span>
+    </li>
+  
+  </ul>
+</div>
+
+<div class="product-block">
+  <div class="product-name">
+    No More Chafe Duo
+    <span class="muted" style="font-weight:400; font-size:13px;">— 1 retailer</span>
+  </div>
+  <ul class="retailer-list">
+  
+    <li>
+      <span class="retailer-name">Cult Beauty</span>
+      <span class="subtle">since today</span>
+      <span class="src-tag">automated</span>
+    </li>
+  
+  </ul>
+</div>
+
+<div class="product-block">
+  <div class="product-name">
+    No More Sweat Duo
+    <span class="muted" style="font-weight:400; font-size:13px;">— 1 retailer</span>
+  </div>
+  <ul class="retailer-list">
+  
+    <li>
+      <span class="retailer-name">Cult Beauty</span>
+      <span class="subtle">since 13 days ago</span>
+      <span class="src-tag">automated</span>
+    </li>
+  
+  </ul>
+</div>
+
+<div class="product-block">
+  <div class="product-name">
+    Rosy Pits
+    <span class="muted" style="font-weight:400; font-size:13px;">— 2 retailers</span>
+  </div>
+  <ul class="retailer-list">
+  
+    <li>
+      <span class="retailer-name">Anthropologie</span>
+      <span class="subtle">since today</span>
+      <span class="src-tag">manual</span>
+    </li>
+  
+    <li>
+      <span class="retailer-name">Target</span>
+      <span class="subtle">since Thu Apr 30</span>
+      <span class="src-tag">manual</span>
+    </li>
+  
+  </ul>
+</div>
+
+<div class="product-block">
+  <div class="product-name">
+    Shower Sheets
+    <span class="muted" style="font-weight:400; font-size:13px;">— 1 retailer</span>
+  </div>
+  <ul class="retailer-list">
+  
+    <li>
+      <span class="retailer-name">Gee Beauty</span>
+      <span class="subtle">since Thu Apr 30</span>
+      <span class="src-tag">automated</span>
+    </li>
+  
+  </ul>
+</div>
+
+<div class="product-block">
+  <div class="product-name">
+    Smoothie Deo
+    <span class="muted" style="font-weight:400; font-size:13px;">— 1 retailer</span>
+  </div>
+  <ul class="retailer-list">
+  
+    <li>
+      <span class="retailer-name">Target</span>
+      <span class="subtle">since today</span>
+      <span class="src-tag">manual</span>
+    </li>
+  
+  </ul>
+</div>
+
+<div class="product-block">
+  <div class="product-name">
+    Space Bar
+    <span class="muted" style="font-weight:400; font-size:13px;">— 1 retailer</span>
+  </div>
+  <ul class="retailer-list">
+  
+    <li>
+      <span class="retailer-name">Gee Beauty</span>
+      <span class="subtle">since today</span>
+      <span class="src-tag">automated</span>
+    </li>
+  
+  </ul>
+</div>
+
+<div class="product-block">
+  <div class="product-name">
+    Sunny Pits
+    <span class="muted" style="font-weight:400; font-size:13px;">— 1 retailer</span>
+  </div>
+  <ul class="retailer-list">
+  
+    <li>
+      <span class="retailer-name">Target</span>
+      <span class="subtle">since today</span>
+      <span class="src-tag">manual</span>
+    </li>
+  
+  </ul>
+</div>
+
+<div class="product-block">
+  <div class="product-name">
+    Thigh Rescue
+    <span class="muted" style="font-weight:400; font-size:13px;">— 2 retailers</span>
+  </div>
+  <ul class="retailer-list">
+  
+    <li>
+      <span class="retailer-name">Anthropologie</span>
+      <span class="subtle">since 13 days ago</span>
+      <span class="src-tag">manual</span>
+    </li>
+  
+    <li>
+      <span class="retailer-name">Goop</span>
+      <span class="subtle">since Wed May 13</span>
+      <span class="src-tag">automated</span>
+    </li>
+  
+  </ul>
+</div>
+
+<div class="product-block">
+  <div class="product-name">
+    Thigh Rescue 60g
+    <span class="muted" style="font-weight:400; font-size:13px;">— 1 retailer</span>
+  </div>
+  <ul class="retailer-list">
+  
+    <li>
+      <span class="retailer-name">Cult Beauty</span>
+      <span class="subtle">since today</span>
+      <span class="src-tag">automated</span>
+    </li>
+  
+  </ul>
+</div>
+
+<div class="product-block">
+  <div class="product-name">
+    Thigh Rescue Mini 23g
+    <span class="muted" style="font-weight:400; font-size:13px;">— 1 retailer</span>
+  </div>
+  <ul class="retailer-list">
+  
+    <li>
+      <span class="retailer-name">Cult Beauty</span>
+      <span class="subtle">since today</span>
+      <span class="src-tag">automated</span>
+    </li>
+  
+  </ul>
+</div>
+
+<div class="product-block">
+  <div class="product-name">
+    Thigh Rescue Unscented
+    <span class="muted" style="font-weight:400; font-size:13px;">— 1 retailer</span>
+  </div>
+  <ul class="retailer-list">
+  
+    <li>
+      <span class="retailer-name">Anthropologie</span>
+      <span class="subtle">since 13 days ago</span>
+      <span class="src-tag">manual</span>
+    </li>
+  
+  </ul>
+</div>
+
+<div class="product-block">
+  <div class="product-name">
+    Unscented Thigh Rescue
+    <span class="muted" style="font-weight:400; font-size:13px;">— 1 retailer</span>
+  </div>
+  <ul class="retailer-list">
+  
+    <li>
+      <span class="retailer-name">ASOS</span>
+      <span class="subtle">since Thu Apr 30</span>
+      <span class="src-tag">manual</span>
+    </li>
+  
+  </ul>
+</div>
+
+</div>
+
+
+
+
+</section><!-- /content-sku -->
+
+<section class="view-content" id="content-summary">
+
+<h2>Per-retailer summary</h2>
+<div class="card">
+<table>
+  <tr>
+    <th>Retailer</th><th class="num">SKUs</th>
+    <th class="num">In stock</th><th class="num">OOS</th>
+    <th class="num">Error</th><th class="num">Unknown</th>
+    <th class="num">No check</th>
+  </tr>
+  
+  <tr>
+    <td>Boots <span class="src-tag">automated</span></td>
+    <td class="num">5</td>
+    <td class="num ">0</td>
+    <td class="num ">—</td>
+    <td class="num status-ERROR">5</td>
+    <td class="num">—</td>
+    <td class="num">—</td>
+  </tr>
+  
+  <tr>
+    <td>Cult Beauty <span class="src-tag">automated</span></td>
+    <td class="num">23</td>
+    <td class="num status-IN_STOCK">12</td>
+    <td class="num status-OOS">11</td>
+    <td class="num ">—</td>
+    <td class="num">—</td>
+    <td class="num">—</td>
+  </tr>
+  
+  <tr>
+    <td>Gee Beauty <span class="src-tag">automated</span></td>
+    <td class="num">21</td>
+    <td class="num status-IN_STOCK">18</td>
+    <td class="num status-OOS">3</td>
+    <td class="num ">—</td>
+    <td class="num">—</td>
+    <td class="num">—</td>
+  </tr>
+  
+  <tr>
+    <td>Goop <span class="src-tag">automated</span></td>
+    <td class="num">2</td>
+    <td class="num status-IN_STOCK">1</td>
+    <td class="num status-OOS">1</td>
+    <td class="num ">—</td>
+    <td class="num">—</td>
+    <td class="num">—</td>
+  </tr>
+  
+  <tr>
+    <td>Nordstrom <span class="src-tag">automated</span></td>
+    <td class="num">25</td>
+    <td class="num status-IN_STOCK">23</td>
+    <td class="num ">—</td>
+    <td class="num status-ERROR">2</td>
+    <td class="num">—</td>
+    <td class="num">—</td>
+  </tr>
+  
+  <tr>
+    <td>ASOS <span class="src-tag">manual</span></td>
+    <td class="num">18</td>
+    <td class="num status-IN_STOCK">15</td>
+    <td class="num status-OOS">3</td>
+    <td class="num ">—</td>
+    <td class="num">—</td>
+    <td class="num">—</td>
+  </tr>
+  
+  <tr>
+    <td>Anthropologie <span class="src-tag">manual</span></td>
+    <td class="num">25</td>
+    <td class="num status-IN_STOCK">15</td>
+    <td class="num status-OOS">10</td>
+    <td class="num ">—</td>
+    <td class="num">—</td>
+    <td class="num">—</td>
+  </tr>
+  
+  <tr>
+    <td>CVS <span class="src-tag">manual</span></td>
+    <td class="num">2</td>
+    <td class="num status-IN_STOCK">2</td>
+    <td class="num ">—</td>
+    <td class="num ">—</td>
+    <td class="num">—</td>
+    <td class="num">—</td>
+  </tr>
+  
+  <tr>
+    <td>Target <span class="src-tag">manual</span></td>
+    <td class="num">25</td>
+    <td class="num status-IN_STOCK">13</td>
+    <td class="num status-OOS">12</td>
+    <td class="num ">—</td>
+    <td class="num">—</td>
+    <td class="num">—</td>
+  </tr>
+  
+  <tr>
+    <td>Walmart <span class="src-tag">manual</span></td>
+    <td class="num">10</td>
+    <td class="num status-IN_STOCK">7</td>
+    <td class="num status-OOS">3</td>
+    <td class="num ">—</td>
+    <td class="num">—</td>
+    <td class="num">—</td>
+  </tr>
+  
+</table>
+</div>
+
+</section><!-- /content-summary -->
+
+<section class="view-content" id="content-changes">
+
+<h2>Stock history — last 4 checks</h2>
+<div class="muted" style="margin: -4px 0 12px;">
+  Products currently OOS or with a status change in the last 28 days. Oldest &rarr; newest.
+</div>
+
+<div class="card">
+<table class="matrix-table">
+  <tr>
+    <th></th>
+    <th class="matrix-col">May 8</th><th class="matrix-col">May 13</th><th class="matrix-col">May 27</th><th class="matrix-col">Jun 10</th>
+  </tr>
+  
+  <tr class="matrix-retailer-row">
+    <td colspan="5">Target</td>
+  </tr>
+  
+  <tr>
+    <td>Après Shave - 3 oz</td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-IN_STOCK">IN</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-IN_STOCK">IN</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+  </tr>
+  
+  <tr>
+    <td>Beachy Pits</td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-IN_STOCK">IN</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-IN_STOCK">IN</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-IN_STOCK">IN</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+  </tr>
+  
+  <tr>
+    <td>Blade Bar</td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+  </tr>
+  
+  <tr>
+    <td>Body Dust</td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-IN_STOCK">IN</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-IN_STOCK">IN</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-IN_STOCK">IN</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+  </tr>
+  
+  <tr>
+    <td>Bust Dust</td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-IN_STOCK">IN</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-IN_STOCK">IN</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+  </tr>
+  
+  <tr>
+    <td>Dust Puff</td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-IN_STOCK">IN</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-IN_STOCK">IN</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+  </tr>
+  
+  <tr>
+    <td>Geo Deo</td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-IN_STOCK">IN</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-IN_STOCK">IN</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-IN_STOCK">IN</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+  </tr>
+  
+  <tr>
+    <td>Happy Pits</td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-IN_STOCK">IN</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-IN_STOCK">IN</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-IN_STOCK">IN</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+  </tr>
+  
+  <tr>
+    <td>Magic Powder</td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+  </tr>
+  
+  <tr>
+    <td>Rosy Pits</td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+  </tr>
+  
+  <tr>
+    <td>Smoothie Deo</td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-IN_STOCK">IN</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-IN_STOCK">IN</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-IN_STOCK">IN</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+  </tr>
+  
+  <tr>
+    <td>Sunny Pits</td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-IN_STOCK">IN</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-IN_STOCK">IN</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-IN_STOCK">IN</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+  </tr>
+  
+  
+  <tr class="matrix-expand-row">
+    <td colspan="5">
+      <details class="other-products">
+        <summary>Show all 13 other products at Target</summary>
+        <table class="matrix-table matrix-inner">
+          
+          <tr>
+            <td>Après Shave Mini - 1.7 oz</td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+          </tr>
+          
+          <tr>
+            <td>Blister &amp; Heel Rescue</td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+          </tr>
+          
+          <tr>
+            <td>Butt Stuff</td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+          </tr>
+          
+          <tr>
+            <td>Chest-o Presto</td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+          </tr>
+          
+          <tr>
+            <td>Glow Deo</td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+          </tr>
+          
+          <tr>
+            <td>Green Deo</td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+          </tr>
+          
+          <tr>
+            <td>Night Rescue</td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+          </tr>
+          
+          <tr>
+            <td>Soapy Pits</td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+          </tr>
+          
+          <tr>
+            <td>Space Bar</td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+          </tr>
+          
+          <tr>
+            <td>Thigh Rescue</td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+          </tr>
+          
+          <tr>
+            <td>Thigh Rescue Gel</td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+          </tr>
+          
+          <tr>
+            <td>Thigh Rescue Mini</td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+          </tr>
+          
+          <tr>
+            <td>Toe Deo</td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+          </tr>
+          
+        </table>
+      </details>
+    </td>
+  </tr>
+  
+  
+  <tr class="matrix-retailer-row">
+    <td colspan="5">Walmart</td>
+  </tr>
+  
+  <tr>
+    <td>Body Dust</td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+  </tr>
+  
+  <tr>
+    <td>Bust Dust</td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-IN_STOCK">IN</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-IN_STOCK">IN</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+  </tr>
+  
+  <tr>
+    <td>Geo Deo</td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+  </tr>
+  
+  
+  <tr class="matrix-expand-row">
+    <td colspan="5">
+      <details class="other-products">
+        <summary>Show all 7 other products at Walmart</summary>
+        <table class="matrix-table matrix-inner">
+          
+          <tr>
+            <td>Après Shave</td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+          </tr>
+          
+          <tr>
+            <td>Blade Bar</td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+          </tr>
+          
+          <tr>
+            <td>Rosy Pits</td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+          </tr>
+          
+          <tr>
+            <td>Santal Deo</td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+          </tr>
+          
+          <tr>
+            <td>Smoothie Deo</td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+          </tr>
+          
+          <tr>
+            <td>Space Bar</td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+          </tr>
+          
+          <tr>
+            <td>Thigh Rescue</td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+          </tr>
+          
+        </table>
+      </details>
+    </td>
+  </tr>
+  
+  
+  <tr class="matrix-retailer-row">
+    <td colspan="5">Anthropologie</td>
+  </tr>
+  
+  <tr>
+    <td>Beachy Pits</td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-IN_STOCK">IN</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-IN_STOCK">IN</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-IN_STOCK">IN</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+  </tr>
+  
+  <tr>
+    <td>Body Dust</td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-IN_STOCK">IN</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-IN_STOCK">IN</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+  </tr>
+  
+  <tr>
+    <td>Body Dust Mini</td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-IN_STOCK">IN</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-IN_STOCK">IN</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-IN_STOCK">IN</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+  </tr>
+  
+  <tr>
+    <td>Bust Dust</td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+  </tr>
+  
+  <tr>
+    <td>Chest-o Presto</td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-ERROR">ERR</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-ERROR">ERR</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+  </tr>
+  
+  <tr>
+    <td>Geo Deo</td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-ERROR">ERR</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-ERROR">ERR</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+  </tr>
+  
+  <tr>
+    <td>Magic Powder</td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-ERROR">ERR</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-ERROR">ERR</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+  </tr>
+  
+  <tr>
+    <td>Rosy Pits</td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-IN_STOCK">IN</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-IN_STOCK">IN</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-IN_STOCK">IN</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+  </tr>
+  
+  <tr>
+    <td>Thigh Rescue</td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-IN_STOCK">IN</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-IN_STOCK">IN</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+  </tr>
+  
+  <tr>
+    <td>Thigh Rescue Unscented</td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-ERROR">ERR</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-ERROR">ERR</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+  </tr>
+  
+  
+  <tr class="matrix-expand-row">
+    <td colspan="5">
+      <details class="other-products">
+        <summary>Show all 15 other products at Anthropologie</summary>
+        <table class="matrix-table matrix-inner">
+          
+          <tr>
+            <td>Après Shave</td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-OOS">OOS</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+          </tr>
+          
+          <tr>
+            <td>Après Shave Oil</td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+          </tr>
+          
+          <tr>
+            <td>Coco Deo</td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+          </tr>
+          
+          <tr>
+            <td>Dust Puff</td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+          </tr>
+          
+          <tr>
+            <td>Green Deo</td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+          </tr>
+          
+          <tr>
+            <td>Le Tush</td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+          </tr>
+          
+          <tr>
+            <td>Night Rescue</td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+          </tr>
+          
+          <tr>
+            <td>Peachy Deo</td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+          </tr>
+          
+          <tr>
+            <td>Quick Shave</td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-OOS">OOS</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+          </tr>
+          
+          <tr>
+            <td>Santal Deo</td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+          </tr>
+          
+          <tr>
+            <td>Smoothie Deo</td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-OOS">OOS</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+          </tr>
+          
+          <tr>
+            <td>Soapy Pits</td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+          </tr>
+          
+          <tr>
+            <td>Sunny Pits</td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+          </tr>
+          
+          <tr>
+            <td>Thigh Rescue Mini</td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-ERROR">ERR</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-ERROR">ERR</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-OOS">OOS</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+          </tr>
+          
+          <tr>
+            <td>Toe Deo</td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+          </tr>
+          
+        </table>
+      </details>
+    </td>
+  </tr>
+  
+  
+  <tr class="matrix-retailer-row">
+    <td colspan="5">ASOS</td>
+  </tr>
+  
+  <tr>
+    <td>Coco Deo</td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+  </tr>
+  
+  <tr>
+    <td>Cream Deo</td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-ERROR">ERR</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-ERROR">ERR</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-ERROR">ERR</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+  </tr>
+  
+  <tr>
+    <td>Unscented Thigh Rescue</td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+  </tr>
+  
+  
+  <tr class="matrix-expand-row">
+    <td colspan="5">
+      <details class="other-products">
+        <summary>Show all 15 other products at ASOS</summary>
+        <table class="matrix-table matrix-inner">
+          
+          <tr>
+            <td>Body Dust</td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-OOS">OOS</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+          </tr>
+          
+          <tr>
+            <td>Body Dust Mini</td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-OOS">OOS</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-OOS">OOS</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+          </tr>
+          
+          <tr>
+            <td>Bust Dust</td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+          </tr>
+          
+          <tr>
+            <td>Dust Puff</td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-OOS">OOS</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-OOS">OOS</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+          </tr>
+          
+          <tr>
+            <td>Happy Pits</td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-OOS">OOS</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-OOS">OOS</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-OOS">OOS</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+          </tr>
+          
+          <tr>
+            <td>Le Tush</td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-OOS">OOS</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-OOS">OOS</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+          </tr>
+          
+          <tr>
+            <td>Megafresh Wipes</td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+          </tr>
+          
+          <tr>
+            <td>Night Rescue</td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-OOS">OOS</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-OOS">OOS</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-OOS">OOS</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+          </tr>
+          
+          <tr>
+            <td>Rosy Pits</td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-OOS">OOS</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-OOS">OOS</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+          </tr>
+          
+          <tr>
+            <td>Rosy Pits Mini</td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+          </tr>
+          
+          <tr>
+            <td>Shower Sheets</td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-OOS">OOS</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-OOS">OOS</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+          </tr>
+          
+          <tr>
+            <td>Smoothie Deo</td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+          </tr>
+          
+          <tr>
+            <td>Space Bar</td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-OOS">OOS</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-OOS">OOS</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+          </tr>
+          
+          <tr>
+            <td>Thigh Rescue</td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+          </tr>
+          
+          <tr>
+            <td>Thigh Rescue Mini</td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+          </tr>
+          
+        </table>
+      </details>
+    </td>
+  </tr>
+  
+  
+  <tr class="matrix-retailer-row">
+    <td colspan="5">Gee Beauty</td>
+  </tr>
+  
+  <tr>
+    <td>Bust Dust</td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+  </tr>
+  
+  <tr>
+    <td>Shower Sheets</td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+  </tr>
+  
+  <tr>
+    <td>Space Bar</td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-IN_STOCK">IN</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-IN_STOCK">IN</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-IN_STOCK">IN</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+  </tr>
+  
+  
+  <tr class="matrix-expand-row">
+    <td colspan="5">
+      <details class="other-products">
+        <summary>Show all 18 other products at Gee Beauty</summary>
+        <table class="matrix-table matrix-inner">
+          
+          <tr>
+            <td>Apres Shave Oil</td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+          </tr>
+          
+          <tr>
+            <td>Beachy Pits</td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-OOS">OOS</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-OOS">OOS</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+          </tr>
+          
+          <tr>
+            <td>Body Dust</td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-OOS">OOS</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+          </tr>
+          
+          <tr>
+            <td>Coco Deo</td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-OOS">OOS</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-OOS">OOS</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+          </tr>
+          
+          <tr>
+            <td>Glow Deo</td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+          </tr>
+          
+          <tr>
+            <td>Green Deo</td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-OOS">OOS</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-OOS">OOS</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+          </tr>
+          
+          <tr>
+            <td>Happy Pits</td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+          </tr>
+          
+          <tr>
+            <td>Magic Powder</td>
+            
+            <td class="matrix-cell">
+              <span class="subtle">—</span>
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="subtle">—</span>
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="subtle">—</span>
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+          </tr>
+          
+          <tr>
+            <td>Megafresh Wipes</td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+          </tr>
+          
+          <tr>
+            <td>Rosy Pits</td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-OOS">OOS</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-OOS">OOS</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+          </tr>
+          
+          <tr>
+            <td>Rosy Pits Mini</td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-OOS">OOS</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-OOS">OOS</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+          </tr>
+          
+          <tr>
+            <td>Santal Deo</td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+          </tr>
+          
+          <tr>
+            <td>Smoothie Deo</td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+          </tr>
+          
+          <tr>
+            <td>Smoothie Deo Mini</td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+          </tr>
+          
+          <tr>
+            <td>Soapy Pits</td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-OOS">OOS</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-OOS">OOS</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+          </tr>
+          
+          <tr>
+            <td>Sunny Pits</td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-OOS">OOS</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-OOS">OOS</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+          </tr>
+          
+          <tr>
+            <td>Thigh Rescue</td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-OOS">OOS</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-OOS">OOS</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+          </tr>
+          
+          <tr>
+            <td>Thigh Rescue Mini</td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-OOS">OOS</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-OOS">OOS</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+          </tr>
+          
+        </table>
+      </details>
+    </td>
+  </tr>
+  
+  
+  <tr class="matrix-retailer-row">
+    <td colspan="5">Cult Beauty</td>
+  </tr>
+  
+  <tr>
+    <td>Best of Megababe Trio</td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-IN_STOCK">IN</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-IN_STOCK">IN</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+  </tr>
+  
+  <tr>
+    <td>Bidet Bar</td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-IN_STOCK">IN</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-IN_STOCK">IN</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-IN_STOCK">IN</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+  </tr>
+  
+  <tr>
+    <td>Body Dust</td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-IN_STOCK">IN</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-IN_STOCK">IN</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+  </tr>
+  
+  <tr>
+    <td>Bust Dust</td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-IN_STOCK">IN</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-IN_STOCK">IN</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-IN_STOCK">IN</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+  </tr>
+  
+  <tr>
+    <td>Dust Puff</td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-IN_STOCK">IN</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-IN_STOCK">IN</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-IN_STOCK">IN</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+  </tr>
+  
+  <tr>
+    <td>Geo Deo</td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-IN_STOCK">IN</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-IN_STOCK">IN</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+  </tr>
+  
+  <tr>
+    <td>Le Tush</td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+  </tr>
+  
+  <tr>
+    <td>No More Chafe Duo</td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-IN_STOCK">IN</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-IN_STOCK">IN</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-IN_STOCK">IN</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+  </tr>
+  
+  <tr>
+    <td>No More Sweat Duo</td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-IN_STOCK">IN</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-IN_STOCK">IN</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+  </tr>
+  
+  <tr>
+    <td>Thigh Rescue 60g</td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-IN_STOCK">IN</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-IN_STOCK">IN</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-IN_STOCK">IN</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+  </tr>
+  
+  <tr>
+    <td>Thigh Rescue Mini 23g</td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-IN_STOCK">IN</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-IN_STOCK">IN</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-IN_STOCK">IN</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+  </tr>
+  
+  
+  <tr class="matrix-expand-row">
+    <td colspan="5">
+      <details class="other-products">
+        <summary>Show all 12 other products at Cult Beauty</summary>
+        <table class="matrix-table matrix-inner">
+          
+          <tr>
+            <td>Body Dust Mini</td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+          </tr>
+          
+          <tr>
+            <td>Coco Deo</td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+          </tr>
+          
+          <tr>
+            <td>Happy Pits</td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+          </tr>
+          
+          <tr>
+            <td>Night Rescue</td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+          </tr>
+          
+          <tr>
+            <td>Peachy Deo</td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+          </tr>
+          
+          <tr>
+            <td>Rosy Pits 75g</td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+          </tr>
+          
+          <tr>
+            <td>Rosy Pits Mini 28g</td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+          </tr>
+          
+          <tr>
+            <td>Santal Deo</td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+          </tr>
+          
+          <tr>
+            <td>Smoothie Deo 75g</td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+          </tr>
+          
+          <tr>
+            <td>Smoothie Deo Mini 28g</td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+          </tr>
+          
+          <tr>
+            <td>Space Bar</td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+          </tr>
+          
+          <tr>
+            <td>Unscented Thigh Rescue</td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+          </tr>
+          
+        </table>
+      </details>
+    </td>
+  </tr>
+  
+  
+  <tr class="matrix-retailer-row">
+    <td colspan="5">Goop</td>
+  </tr>
+  
+  <tr>
+    <td>Thigh Rescue</td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-IN_STOCK">IN</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+    <td class="matrix-cell">
+      <span class="badge badge-OOS">OOS</span>
+      
+    </td>
+    
+  </tr>
+  
+  
+  <tr class="matrix-expand-row">
+    <td colspan="5">
+      <details class="other-products">
+        <summary>Show all 1 other product at Goop</summary>
+        <table class="matrix-table matrix-inner">
+          
+          <tr>
+            <td>Green Deo</td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+            <td class="matrix-cell">
+              <span class="badge badge-IN_STOCK">IN</span>
+              
+            </td>
+            
+          </tr>
+          
+        </table>
+      </details>
+    </td>
+  </tr>
+  
+  
+</table>
+</div>
+
+
+</section><!-- /content-changes -->
+
+<section class="view-content" id="content-new-products">
+
+<h2>New products detected</h2>
+<div class="muted" style="margin: -4px 0 12px;">Products on a retailer's brand page not yet in <code>products.csv</code>.</div>
+
+<div class="card">
+<table>
+  <tr><th>Retailer</th><th>Product</th><th>First seen</th><th>URL</th></tr>
+  
+  <tr>
+    <td>Gee Beauty</td>
+    <td>Magic Powder</td>
+    <td class="subtle">13 days ago</td>
+    <td class="url-cell">
+      <a href="https://geebeauty.ca/products/magic-powder" target="_blank" rel="noopener">https://geebeauty.ca/products/magic-powder</a>
+    </td>
+  </tr>
+  
+  <tr>
+    <td>Nordstrom</td>
+    <td>Megababe Deo Duo Best-Smelling Deodorant Set $28 Value (Nordstrom Exclusive)</td>
+    <td class="subtle">Fri May 8</td>
+    <td class="url-cell">
+      <a href="https://www.nordstrom.com/s/megababe-deo-duo-best-smelling-deodorant-set-28-value-nordstrom-exclusive/8497256" target="_blank" rel="noopener">https://www.nordstrom.com/s/megababe-deo-duo-best-smelling-deodorant-set-28-value-nordstrom-exclusive/8497256</a>
+    </td>
+  </tr>
+  
+  <tr>
+    <td>Nordstrom</td>
+    <td>Megababe Raising the Bar Do-It-All Soap Set $32 Value</td>
+    <td class="subtle">Fri May 8</td>
+    <td class="url-cell">
+      <a href="https://www.nordstrom.com/s/megababe-raising-the-bar-do-it-all-soap-set-32-value/8527712" target="_blank" rel="noopener">https://www.nordstrom.com/s/megababe-raising-the-bar-do-it-all-soap-set-32-value/8527712</a>
+    </td>
+  </tr>
+  
+</table>
+</div>
+
+
+</section><!-- /content-new-products -->
+
+<section class="view-content" id="content-urls">
+
+<h2>URLs to fix</h2>
+<div class="muted" style="margin: -4px 0 12px;">Products whose URL doesn't point to a PDP — auto-marked ERROR until <code>products.csv</code> is updated.</div>
+
+<div class="card">
+<table>
+  <tr><th>Retailer</th><th>Product</th><th>Quality</th><th>URL</th></tr>
+  
+  <tr>
+    <td>ASOS</td>
+    <td>Cream Deo</td>
+    <td class="subtle">search_page</td>
+    <td class="url-cell"><a href="https://www.asos.com/search/?q=megababe" target="_blank" rel="noopener">https://www.asos.com/search/?q=megababe</a></td>
+  </tr>
+  
+  <tr>
+    <td>Anthropologie</td>
+    <td>Chest-o Presto</td>
+    <td class="subtle">brand_page</td>
+    <td class="url-cell"><a href="https://www.anthropologie.com/brands/megababe" target="_blank" rel="noopener">https://www.anthropologie.com/brands/megababe</a></td>
+  </tr>
+  
+  <tr>
+    <td>Anthropologie</td>
+    <td>Geo Deo</td>
+    <td class="subtle">brand_page</td>
+    <td class="url-cell"><a href="https://www.anthropologie.com/brands/megababe" target="_blank" rel="noopener">https://www.anthropologie.com/brands/megababe</a></td>
+  </tr>
+  
+  <tr>
+    <td>Anthropologie</td>
+    <td>Magic Powder</td>
+    <td class="subtle">brand_page</td>
+    <td class="url-cell"><a href="https://www.anthropologie.com/brands/megababe" target="_blank" rel="noopener">https://www.anthropologie.com/brands/megababe</a></td>
+  </tr>
+  
+  <tr>
+    <td>Anthropologie</td>
+    <td>Thigh Rescue Mini</td>
+    <td class="subtle">brand_page</td>
+    <td class="url-cell"><a href="https://www.anthropologie.com/brands/megababe" target="_blank" rel="noopener">https://www.anthropologie.com/brands/megababe</a></td>
+  </tr>
+  
+  <tr>
+    <td>Anthropologie</td>
+    <td>Thigh Rescue Unscented</td>
+    <td class="subtle">brand_page</td>
+    <td class="url-cell"><a href="https://www.anthropologie.com/brands/megababe" target="_blank" rel="noopener">https://www.anthropologie.com/brands/megababe</a></td>
+  </tr>
+  
+  <tr>
+    <td>Cult Beauty</td>
+    <td>Le Tush</td>
+    <td class="subtle">category_page</td>
+    <td class="url-cell"><a href="https://www.cultbeauty.com/c/brands/megababe/shop-all/" target="_blank" rel="noopener">https://www.cultbeauty.com/c/brands/megababe/shop-all/</a></td>
+  </tr>
+  
+  <tr>
+    <td>Nordstrom</td>
+    <td>Chest-o Presto</td>
+    <td class="subtle">brand_page</td>
+    <td class="url-cell"><a href="https://www.nordstrom.com/brands/megababe--20023" target="_blank" rel="noopener">https://www.nordstrom.com/brands/megababe--20023</a></td>
+  </tr>
+  
+</table>
+</div>
+
+
+</section><!-- /content-urls -->
+
+<section class="view-content" id="content-retailer">
+
+<div class="card">
+
+<div class="retailer-block">
+  <div class="retailer-header">
+    <div class="retailer-h3">Target</div>
+    <span class="src-tag">manual</span>
+  </div>
+  <div class="retailer-counts">
+    <span>25 SKUs</span>
+    <span class="status-IN_STOCK">13 in stock</span>
+    <span class="status-OOS">12 OOS</span>
+    
+    
+    
+    <span class="subtle">checked today</span>
+  </div>
+
+  
+  <ul class="retailer-oos-list">
+    
+    <li>
+      <span class="badge badge-OOS">OOS</span>
+      Après Shave - 3 oz
+      <span class="subtle">since 13 days ago</span>
+    </li>
+    
+    <li>
+      <span class="badge badge-OOS">OOS</span>
+      Beachy Pits
+      <span class="subtle">since today</span>
+    </li>
+    
+    <li>
+      <span class="badge badge-OOS">OOS</span>
+      Blade Bar
+      <span class="subtle">since Thu Apr 30</span>
+    </li>
+    
+    <li>
+      <span class="badge badge-OOS">OOS</span>
+      Body Dust
+      <span class="subtle">since today</span>
+    </li>
+    
+    <li>
+      <span class="badge badge-OOS">OOS</span>
+      Bust Dust
+      <span class="subtle">since 13 days ago</span>
+    </li>
+    
+    <li>
+      <span class="badge badge-OOS">OOS</span>
+      Dust Puff
+      <span class="subtle">since 13 days ago</span>
+    </li>
+    
+    <li>
+      <span class="badge badge-OOS">OOS</span>
+      Geo Deo
+      <span class="subtle">since today</span>
+    </li>
+    
+    <li>
+      <span class="badge badge-OOS">OOS</span>
+      Happy Pits
+      <span class="subtle">since today</span>
+    </li>
+    
+    <li>
+      <span class="badge badge-OOS">OOS</span>
+      Magic Powder
+      <span class="subtle">since Thu Apr 30</span>
+    </li>
+    
+    <li>
+      <span class="badge badge-OOS">OOS</span>
+      Rosy Pits
+      <span class="subtle">since Thu Apr 30</span>
+    </li>
+    
+    <li>
+      <span class="badge badge-OOS">OOS</span>
+      Smoothie Deo
+      <span class="subtle">since today</span>
+    </li>
+    
+    <li>
+      <span class="badge badge-OOS">OOS</span>
+      Sunny Pits
+      <span class="subtle">since today</span>
+    </li>
+    
+  </ul>
+  
+
+  
+  <details class="other-products">
+    <summary>13 other products</summary>
+    <table>
+      <tr><th>Product</th><th>Status</th><th>Last checked</th></tr>
+      
+      <tr>
+        <td>Après Shave Mini - 1.7 oz</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Blister &amp; Heel Rescue</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Butt Stuff</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Chest-o Presto</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Glow Deo</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Green Deo</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Night Rescue</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Soapy Pits</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Space Bar</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Thigh Rescue</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Thigh Rescue Gel</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Thigh Rescue Mini</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Toe Deo</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+    </table>
+  </details>
+  
+</div>
+
+<div class="retailer-block">
+  <div class="retailer-header">
+    <div class="retailer-h3">Walmart</div>
+    <span class="src-tag">manual</span>
+  </div>
+  <div class="retailer-counts">
+    <span>10 SKUs</span>
+    <span class="status-IN_STOCK">7 in stock</span>
+    <span class="status-OOS">3 OOS</span>
+    
+    
+    
+    <span class="subtle">checked today</span>
+  </div>
+
+  
+  <ul class="retailer-oos-list">
+    
+    <li>
+      <span class="badge badge-OOS">OOS</span>
+      Body Dust
+      <span class="subtle">since Thu Apr 30</span>
+    </li>
+    
+    <li>
+      <span class="badge badge-OOS">OOS</span>
+      Bust Dust
+      <span class="subtle">since 13 days ago</span>
+    </li>
+    
+    <li>
+      <span class="badge badge-OOS">OOS</span>
+      Geo Deo
+      <span class="subtle">since Thu Apr 30</span>
+    </li>
+    
+  </ul>
+  
+
+  
+  <details class="other-products">
+    <summary>7 other products</summary>
+    <table>
+      <tr><th>Product</th><th>Status</th><th>Last checked</th></tr>
+      
+      <tr>
+        <td>Après Shave</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Blade Bar</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Rosy Pits</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Santal Deo</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Smoothie Deo</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Space Bar</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Thigh Rescue</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+    </table>
+  </details>
+  
+</div>
+
+<div class="retailer-block">
+  <div class="retailer-header">
+    <div class="retailer-h3">CVS</div>
+    <span class="src-tag">manual</span>
+  </div>
+  <div class="retailer-counts">
+    <span>2 SKUs</span>
+    <span class="status-IN_STOCK">2 in stock</span>
+    
+    
+    
+    
+    <span class="subtle">checked today</span>
+  </div>
+
+  
+  <div style="font-size:13px; color:#aaa; padding: 4px 0;">All products in stock.</div>
+  
+
+  
+  <details class="other-products">
+    <summary>2 other products</summary>
+    <table>
+      <tr><th>Product</th><th>Status</th><th>Last checked</th></tr>
+      
+      <tr>
+        <td>Butt Stuff</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Thigh Rescue</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+    </table>
+  </details>
+  
+</div>
+
+<div class="retailer-block">
+  <div class="retailer-header">
+    <div class="retailer-h3">Anthropologie</div>
+    <span class="src-tag">manual</span>
+  </div>
+  <div class="retailer-counts">
+    <span>25 SKUs</span>
+    <span class="status-IN_STOCK">15 in stock</span>
+    <span class="status-OOS">10 OOS</span>
+    
+    
+    
+    <span class="subtle">checked today</span>
+  </div>
+
+  
+  <ul class="retailer-oos-list">
+    
+    <li>
+      <span class="badge badge-OOS">OOS</span>
+      Beachy Pits
+      <span class="subtle">since today</span>
+    </li>
+    
+    <li>
+      <span class="badge badge-OOS">OOS</span>
+      Body Dust
+      <span class="subtle">since 13 days ago</span>
+    </li>
+    
+    <li>
+      <span class="badge badge-OOS">OOS</span>
+      Body Dust Mini
+      <span class="subtle">since today</span>
+    </li>
+    
+    <li>
+      <span class="badge badge-OOS">OOS</span>
+      Bust Dust
+      <span class="subtle">since Thu Apr 30</span>
+    </li>
+    
+    <li>
+      <span class="badge badge-OOS">OOS</span>
+      Chest-o Presto
+      <span class="subtle">since 13 days ago</span>
+    </li>
+    
+    <li>
+      <span class="badge badge-OOS">OOS</span>
+      Geo Deo
+      <span class="subtle">since 13 days ago</span>
+    </li>
+    
+    <li>
+      <span class="badge badge-OOS">OOS</span>
+      Magic Powder
+      <span class="subtle">since 13 days ago</span>
+    </li>
+    
+    <li>
+      <span class="badge badge-OOS">OOS</span>
+      Rosy Pits
+      <span class="subtle">since today</span>
+    </li>
+    
+    <li>
+      <span class="badge badge-OOS">OOS</span>
+      Thigh Rescue
+      <span class="subtle">since 13 days ago</span>
+    </li>
+    
+    <li>
+      <span class="badge badge-OOS">OOS</span>
+      Thigh Rescue Unscented
+      <span class="subtle">since 13 days ago</span>
+    </li>
+    
+  </ul>
+  
+
+  
+  <details class="other-products">
+    <summary>15 other products</summary>
+    <table>
+      <tr><th>Product</th><th>Status</th><th>Last checked</th></tr>
+      
+      <tr>
+        <td>Après Shave</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Après Shave Oil</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Coco Deo</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Dust Puff</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Green Deo</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Le Tush</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Night Rescue</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Peachy Deo</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Quick Shave</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Santal Deo</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Smoothie Deo</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Soapy Pits</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Sunny Pits</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Thigh Rescue Mini</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Toe Deo</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+    </table>
+  </details>
+  
+</div>
+
+<div class="retailer-block">
+  <div class="retailer-header">
+    <div class="retailer-h3">ASOS</div>
+    <span class="src-tag">manual</span>
+  </div>
+  <div class="retailer-counts">
+    <span>18 SKUs</span>
+    <span class="status-IN_STOCK">15 in stock</span>
+    <span class="status-OOS">3 OOS</span>
+    
+    
+    
+    <span class="subtle">checked today</span>
+  </div>
+
+  
+  <ul class="retailer-oos-list">
+    
+    <li>
+      <span class="badge badge-OOS">OOS</span>
+      Coco Deo
+      <span class="subtle">since Thu Apr 30</span>
+    </li>
+    
+    <li>
+      <span class="badge badge-OOS">OOS</span>
+      Cream Deo
+      <span class="subtle">since today</span>
+    </li>
+    
+    <li>
+      <span class="badge badge-OOS">OOS</span>
+      Unscented Thigh Rescue
+      <span class="subtle">since Thu Apr 30</span>
+    </li>
+    
+  </ul>
+  
+
+  
+  <details class="other-products">
+    <summary>15 other products</summary>
+    <table>
+      <tr><th>Product</th><th>Status</th><th>Last checked</th></tr>
+      
+      <tr>
+        <td>Body Dust</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Body Dust Mini</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Bust Dust</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Dust Puff</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Happy Pits</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Le Tush</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Megafresh Wipes</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Night Rescue</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Rosy Pits</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Rosy Pits Mini</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Shower Sheets</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Smoothie Deo</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Space Bar</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Thigh Rescue</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Thigh Rescue Mini</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+    </table>
+  </details>
+  
+</div>
+
+<div class="retailer-block">
+  <div class="retailer-header">
+    <div class="retailer-h3">Nordstrom</div>
+    <span class="src-tag">automated</span>
+  </div>
+  <div class="retailer-counts">
+    <span>25 SKUs</span>
+    <span class="status-IN_STOCK">23 in stock</span>
+    
+    <span class="status-ERROR">2 error</span>
+    
+    
+    <span class="subtle">checked today</span>
+  </div>
+
+  
+  <div style="font-size:13px; color:#aaa; padding: 4px 0;">All products in stock.</div>
+  
+
+  
+  <details class="other-products">
+    <summary>25 other products</summary>
+    <table>
+      <tr><th>Product</th><th>Status</th><th>Last checked</th></tr>
+      
+      <tr>
+        <td>Apres Shave</td>
+        <td><span class="badge badge-ERROR">ERROR</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Chest-o Presto</td>
+        <td><span class="badge badge-ERROR">ERROR</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Ball Deo</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Bidet Bar</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Blade Bar</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Body Dust</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Bust Dust</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Coco Deo</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Deo Duo Gift Set</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Dry Guy</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Dust Puff</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Friction Fighter</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Geo Deo</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Glow Deo</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Happy Pits</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Night Rescue</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Peachy Deo</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Pro Deo</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Raising the Bar Gift Set</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Rosy Pits</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Santal Deo</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Smoothie Deo</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Space Bar</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Thigh Rescue</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Toe Deo</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+    </table>
+  </details>
+  
+</div>
+
+<div class="retailer-block">
+  <div class="retailer-header">
+    <div class="retailer-h3">Gee Beauty</div>
+    <span class="src-tag">automated</span>
+  </div>
+  <div class="retailer-counts">
+    <span>21 SKUs</span>
+    <span class="status-IN_STOCK">18 in stock</span>
+    <span class="status-OOS">3 OOS</span>
+    
+    
+    
+    <span class="subtle">checked today</span>
+  </div>
+
+  
+  <ul class="retailer-oos-list">
+    
+    <li>
+      <span class="badge badge-OOS">OOS</span>
+      Bust Dust
+      <span class="subtle">since Thu Apr 30</span>
+    </li>
+    
+    <li>
+      <span class="badge badge-OOS">OOS</span>
+      Shower Sheets
+      <span class="subtle">since Thu Apr 30</span>
+    </li>
+    
+    <li>
+      <span class="badge badge-OOS">OOS</span>
+      Space Bar
+      <span class="subtle">since today</span>
+    </li>
+    
+  </ul>
+  
+
+  
+  <details class="other-products">
+    <summary>18 other products</summary>
+    <table>
+      <tr><th>Product</th><th>Status</th><th>Last checked</th></tr>
+      
+      <tr>
+        <td>Apres Shave Oil</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Beachy Pits</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Body Dust</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Coco Deo</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Glow Deo</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Green Deo</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Happy Pits</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Magic Powder</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Megafresh Wipes</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Rosy Pits</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Rosy Pits Mini</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Santal Deo</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Smoothie Deo</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Smoothie Deo Mini</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Soapy Pits</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Sunny Pits</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Thigh Rescue</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Thigh Rescue Mini</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+    </table>
+  </details>
+  
+</div>
+
+<div class="retailer-block">
+  <div class="retailer-header">
+    <div class="retailer-h3">Cult Beauty</div>
+    <span class="src-tag">automated</span>
+  </div>
+  <div class="retailer-counts">
+    <span>23 SKUs</span>
+    <span class="status-IN_STOCK">12 in stock</span>
+    <span class="status-OOS">11 OOS</span>
+    
+    
+    
+    <span class="subtle">checked today</span>
+  </div>
+
+  
+  <ul class="retailer-oos-list">
+    
+    <li>
+      <span class="badge badge-OOS">OOS</span>
+      Best of Megababe Trio
+      <span class="subtle">since 13 days ago</span>
+    </li>
+    
+    <li>
+      <span class="badge badge-OOS">OOS</span>
+      Bidet Bar
+      <span class="subtle">since today</span>
+    </li>
+    
+    <li>
+      <span class="badge badge-OOS">OOS</span>
+      Body Dust
+      <span class="subtle">since 13 days ago</span>
+    </li>
+    
+    <li>
+      <span class="badge badge-OOS">OOS</span>
+      Bust Dust
+      <span class="subtle">since today</span>
+    </li>
+    
+    <li>
+      <span class="badge badge-OOS">OOS</span>
+      Dust Puff
+      <span class="subtle">since today</span>
+    </li>
+    
+    <li>
+      <span class="badge badge-OOS">OOS</span>
+      Geo Deo
+      <span class="subtle">since 13 days ago</span>
+    </li>
+    
+    <li>
+      <span class="badge badge-OOS">OOS</span>
+      Le Tush
+      <span class="subtle">since Thu Apr 30</span>
+    </li>
+    
+    <li>
+      <span class="badge badge-OOS">OOS</span>
+      No More Chafe Duo
+      <span class="subtle">since today</span>
+    </li>
+    
+    <li>
+      <span class="badge badge-OOS">OOS</span>
+      No More Sweat Duo
+      <span class="subtle">since 13 days ago</span>
+    </li>
+    
+    <li>
+      <span class="badge badge-OOS">OOS</span>
+      Thigh Rescue 60g
+      <span class="subtle">since today</span>
+    </li>
+    
+    <li>
+      <span class="badge badge-OOS">OOS</span>
+      Thigh Rescue Mini 23g
+      <span class="subtle">since today</span>
+    </li>
+    
+  </ul>
+  
+
+  
+  <details class="other-products">
+    <summary>12 other products</summary>
+    <table>
+      <tr><th>Product</th><th>Status</th><th>Last checked</th></tr>
+      
+      <tr>
+        <td>Body Dust Mini</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Coco Deo</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Happy Pits</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Night Rescue</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Peachy Deo</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Rosy Pits 75g</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Rosy Pits Mini 28g</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Santal Deo</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Smoothie Deo 75g</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Smoothie Deo Mini 28g</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Space Bar</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Unscented Thigh Rescue</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+    </table>
+  </details>
+  
+</div>
+
+<div class="retailer-block">
+  <div class="retailer-header">
+    <div class="retailer-h3">Boots</div>
+    <span class="src-tag">automated</span>
+  </div>
+  <div class="retailer-counts">
+    <span>5 SKUs</span>
+    <span class="status-IN_STOCK">0 in stock</span>
+    
+    <span class="status-ERROR">5 error</span>
+    
+    
+    <span class="subtle">checked today</span>
+  </div>
+
+  
+  <div style="font-size:13px; color:#aaa; padding: 4px 0;">All products in stock.</div>
+  
+
+  
+  <details class="other-products">
+    <summary>5 other products</summary>
+    <table>
+      <tr><th>Product</th><th>Status</th><th>Last checked</th></tr>
+      
+      <tr>
+        <td>Apres Shave</td>
+        <td><span class="badge badge-ERROR">ERROR</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Le Tush</td>
+        <td><span class="badge badge-ERROR">ERROR</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Night Rescue</td>
+        <td><span class="badge badge-ERROR">ERROR</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Thigh Rescue</td>
+        <td><span class="badge badge-ERROR">ERROR</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+      <tr>
+        <td>Thigh Rescue Mini 23g</td>
+        <td><span class="badge badge-ERROR">ERROR</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+    </table>
+  </details>
+  
+</div>
+
+<div class="retailer-block">
+  <div class="retailer-header">
+    <div class="retailer-h3">Goop</div>
+    <span class="src-tag">automated</span>
+  </div>
+  <div class="retailer-counts">
+    <span>2 SKUs</span>
+    <span class="status-IN_STOCK">1 in stock</span>
+    <span class="status-OOS">1 OOS</span>
+    
+    
+    
+    <span class="subtle">checked today</span>
+  </div>
+
+  
+  <ul class="retailer-oos-list">
+    
+    <li>
+      <span class="badge badge-OOS">OOS</span>
+      Thigh Rescue
+      <span class="subtle">since Wed May 13</span>
+    </li>
+    
+  </ul>
+  
+
+  
+  <details class="other-products">
+    <summary>1 other product</summary>
+    <table>
+      <tr><th>Product</th><th>Status</th><th>Last checked</th></tr>
+      
+      <tr>
+        <td>Green Deo</td>
+        <td><span class="badge badge-IN_STOCK">IN STOCK</span></td>
+        <td class="subtle">today</td>
+      </tr>
+      
+    </table>
+  </details>
+  
+</div>
+
+</div>
+
+</section><!-- /content-retailer -->
+
+<div class="footer">Generated Wed Jun 10, 2026 · 3:00 PM UTC</div>
+
+</body>
+</html>

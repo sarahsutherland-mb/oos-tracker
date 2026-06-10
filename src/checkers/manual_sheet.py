@@ -3,20 +3,25 @@ from __future__ import annotations
 import csv
 import io
 from datetime import datetime, timezone
-from typing import Callable
+from typing import Callable, Iterable
 
 import httpx
 
 from .base import CheckResult, Product, Status
 
-# Map sheet status string (lowercased) -> our Status enum.
+# Retailers tracked via the manual Google Sheet. Rows for any other retailer
+# in the sheet are ignored during parse.
+# Anthropologie + CVS were added 2026-04-30 — both are anti-bot-locked at a
+# tier default Playwright can't crack (PerimeterX and Akamai 403 respectively),
+# and the manual-sheet route is cheaper than the bypass tooling we'd need.
+TRACKED_RETAILERS = ("Target", "Walmart", "ASOS", "Anthropologie", "CVS")
+
+# Sheet "Stock status" values we recognize (compared after .strip().lower()).
+# Anything else becomes ERROR with the raw value preserved in notes.
+# Blank → UNKNOWN.
 _STATUS_MAP: dict[str, Status] = {
-    "in_stock": Status.IN_STOCK,
-    "in stock": Status.IN_STOCK,  # tolerate user formatting
-    "oos": Status.OOS,
-    "out_of_stock": Status.OOS,
+    "in stock": Status.IN_STOCK,
     "out of stock": Status.OOS,
-    "error": Status.ERROR,
 }
 
 LastKnownFn = Callable[[int], CheckResult | None]
@@ -25,15 +30,16 @@ LastKnownFn = Callable[[int], CheckResult | None]
 class ManualSheet:
     """Fetches and caches the published Google Sheet CSV.
 
-    One instance is shared across the per-retailer ManualSheetCheckers so the
-    HTTP fetch happens once per run.
+    Sheet schema: columns "Retailer", "Product Name", "Stock status"
+    (other columns ignored). Rows where Retailer is not in
+    TRACKED_RETAILERS are dropped during parse.
     """
 
     def __init__(self, url: str, client: httpx.Client | None = None) -> None:
         self.url = url
         self._client = client or httpx.Client(timeout=15.0, follow_redirects=True)
         self._owns_client = client is None
-        self._lookup: dict[tuple[str, str], dict[str, str]] | None = None
+        self._statuses: dict[tuple[str, str], str] | None = None
         self.fetch_error: str | None = None
 
     def close(self) -> None:
@@ -54,42 +60,83 @@ class ManualSheet:
         inst._client = None  # type: ignore[assignment]
         inst._owns_client = False
         inst.fetch_error = None
-        inst._lookup = inst._parse(text)
+        inst._statuses = inst._parse(text)
         return inst
 
     def load(self) -> None:
-        """Fetch and parse. Safe to call multiple times — only fetches once."""
-        if self._lookup is not None or self.fetch_error is not None:
+        """Fetch + parse. Idempotent — only fetches once per instance."""
+        if self._statuses is not None or self.fetch_error is not None:
             return
         try:
             r = self._client.get(self.url)
             r.raise_for_status()
         except httpx.HTTPError as e:
-            self._lookup = {}
+            self._statuses = {}
             self.fetch_error = f"sheet fetch failed: {e}"
             return
-        self._lookup = self._parse(r.text)
+        self._statuses = self._parse(r.text)
 
     @staticmethod
-    def _parse(text: str) -> dict[tuple[str, str], dict[str, str]]:
+    def _parse(text: str) -> dict[tuple[str, str], str]:
+        """Parse CSV text → {(retailer, product_name): raw_status_string}."""
         reader = csv.DictReader(io.StringIO(text))
-        out: dict[tuple[str, str], dict[str, str]] = {}
+        out: dict[tuple[str, str], str] = {}
         for row in reader:
-            retailer = (row.get("retailer") or "").strip()
-            name = (row.get("product_name") or "").strip()
-            if not retailer or not name:
+            retailer = (row.get("Retailer") or "").strip()
+            if retailer not in TRACKED_RETAILERS:
                 continue
-            out[(retailer, name)] = row
+            name = (row.get("Product Name") or "").strip()
+            if not name:
+                continue
+            status = (row.get("Stock status") or "").strip()
+            out[(retailer, name)] = status
         return out
 
-    def get(self, retailer: str, product_name: str) -> dict[str, str] | None:
+    def get_raw(self, retailer: str, product_name: str) -> str | None:
+        """Raw status string for a row, or None if the row is absent.
+        An empty string return value means the row exists but the cell is blank."""
         self.load()
-        assert self._lookup is not None
-        return self._lookup.get((retailer, product_name))
+        assert self._statuses is not None
+        return self._statuses.get((retailer.strip(), product_name.strip()))
+
+    def reconcile(self, products: Iterable[Product]) -> dict:
+        """Diff sheet keys against products.csv for tracked retailers.
+
+        Returns {
+            'unmatched_sheet': sorted list of (retailer, name) present in
+                sheet but not in products.csv,
+            'unmatched_csv':   sorted list of (retailer, name) present in
+                products.csv but not in sheet,
+            'fetch_error':     error string if the sheet fetch failed
+                               (both lists are empty in that case),
+        }"""
+        self.load()
+        if self.fetch_error is not None:
+            return {
+                "unmatched_sheet": [],
+                "unmatched_csv": [],
+                "fetch_error": self.fetch_error,
+            }
+        assert self._statuses is not None
+        sheet_keys = set(self._statuses.keys())
+        csv_keys = {
+            (p.retailer.strip(), p.name.strip())
+            for p in products
+            if p.retailer in TRACKED_RETAILERS
+        }
+        return {
+            "unmatched_sheet": sorted(sheet_keys - csv_keys),
+            "unmatched_csv": sorted(csv_keys - sheet_keys),
+            "fetch_error": None,
+        }
 
 
 class ManualSheetChecker:
-    """Resolves a manual product's status from the shared ManualSheet."""
+    """Resolves a manual product's status from the shared ManualSheet.
+
+    Uses the run's wall-clock time as `checked_at` (per spec — last_checked
+    is no longer read from the sheet). Falls back to the most recent DB
+    status if the sheet fetch fails entirely."""
 
     retailer: str
 
@@ -106,8 +153,6 @@ class ManualSheetChecker:
     def check(self, product: Product) -> CheckResult:
         now = datetime.now(timezone.utc)
 
-        # If the sheet fetch failed, fall back to most recent DB status so
-        # one bad sheet fetch doesn't poison the whole run.
         self._sheet.load()
         if self._sheet.fetch_error is not None:
             if self._last_known is not None:
@@ -120,34 +165,13 @@ class ManualSheetChecker:
                     )
             return CheckResult(Status.ERROR, now, self._sheet.fetch_error)
 
-        row = self._sheet.get(product.retailer, product.name)
-        if row is None:
+        raw = self._sheet.get_raw(product.retailer, product.name)
+        if raw is None:
             return CheckResult(Status.UNKNOWN, now, "not in manual sheet")
+        if raw == "":
+            return CheckResult(Status.UNKNOWN, now, "blank in sheet")
 
-        notes = (row.get("notes") or "").strip() or None
-        status_raw = (row.get("status") or "").strip().lower()
-
-        if not status_raw:
-            return CheckResult(Status.UNKNOWN, now, notes)
-
-        status = _STATUS_MAP.get(status_raw)
+        status = _STATUS_MAP.get(raw.lower())
         if status is None:
-            return CheckResult(
-                Status.ERROR, now, f"invalid sheet status: {status_raw!r}"
-            )
-
-        checked_at = _parse_last_checked(row.get("last_checked"), default=now)
-        return CheckResult(status, checked_at, notes)
-
-
-def _parse_last_checked(raw: str | None, default: datetime) -> datetime:
-    s = (raw or "").strip()
-    if not s:
-        return default
-    try:
-        dt = datetime.fromisoformat(s)
-    except ValueError:
-        return default
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    return dt
+            return CheckResult(Status.ERROR, now, f"unrecognized status: {raw!r}")
+        return CheckResult(status, now)
