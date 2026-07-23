@@ -396,6 +396,12 @@ we have for other retailers.
 - **Option 3 (defer):** add Boots to `MANUAL_RETAILERS` until either of
   the above is worth the effort. Boots has only 5 SKUs.
 
+**Decision (2026-07-23):** none of the above yet — as a stopgap, the
+checker presumes `IN_STOCK` for all 5 SKUs instead of `ERROR`, since
+Boots has never been observed OOS. Notes still flag that the PDP
+wasn't actually reached, so this is visible as an assumption, not a
+verified check. Revisit when ready to build Option 1, 2, or 3.
+
 **Recommendation:** defer (Option 3) until we ship Anthropologie/CVS
 strategy — same anti-bot tier, same trade-offs. If we figure out
 stealth for one of them, apply the same approach to Boots.

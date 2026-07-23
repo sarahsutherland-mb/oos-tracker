@@ -7,9 +7,11 @@ Recon (2026-04-30, see RETAILER_KNOWLEDGE.md) showed:
   only catalog presence vs absence.
 
 Until Incapsula bypass is decided (stealth tooling, paid service) or
-Boots is folded into the manual sheet, this checker returns ERROR for
-every check with a clear note. Five SKUs total (per `products.csv`),
-all currently `url_quality=pdp` and all currently unreachable.
+Boots is folded into the manual sheet, this checker presumes IN_STOCK
+for every check (per the user, Boots has never been observed OOS — see
+2026-07-23 decision in RETAILER_KNOWLEDGE.md) rather than returning
+ERROR. Five SKUs total (per `products.csv`), all currently
+`url_quality=pdp` and all currently unreachable.
 """
 
 from __future__ import annotations
@@ -18,7 +20,10 @@ from datetime import datetime, timezone
 
 from .base import CheckResult, Product, Status
 
-_NOTE = "Boots PDPs Incapsula-blocked; deferred (see RETAILER_KNOWLEDGE.md)"
+_NOTE = (
+    "Boots PDPs Incapsula-blocked; presumed in-stock, not actually checked "
+    "(see RETAILER_KNOWLEDGE.md)"
+)
 
 
 class BootsChecker:
@@ -37,4 +42,4 @@ class BootsChecker:
         return None
 
     def check(self, product: Product) -> CheckResult:
-        return CheckResult(Status.ERROR, datetime.now(timezone.utc), _NOTE)
+        return CheckResult(Status.IN_STOCK, datetime.now(timezone.utc), _NOTE)
