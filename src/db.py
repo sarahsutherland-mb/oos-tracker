@@ -44,6 +44,21 @@ CREATE TABLE IF NOT EXISTS new_products (
     confirmed INTEGER NOT NULL DEFAULT 0,
     UNIQUE(retailer, product_name)
 );
+
+CREATE TABLE IF NOT EXISTS po_lines (
+    id INTEGER PRIMARY KEY,
+    po_number TEXT NOT NULL,
+    customer TEXT NOT NULL,
+    retailer TEXT NOT NULL,
+    description TEXT NOT NULL,
+    sku TEXT,
+    quantity INTEGER NOT NULL,
+    product_id INTEGER,
+    match_method TEXT NOT NULL,
+    imported_at TIMESTAMP NOT NULL,
+    UNIQUE(po_number, customer, description),
+    FOREIGN KEY (product_id) REFERENCES products(id)
+);
 """
 
 
@@ -272,6 +287,60 @@ def unconfirmed_new_products(
         "FROM new_products WHERE confirmed = 0 "
         "ORDER BY retailer, product_name"
     ).fetchall()
+
+
+def po_lines_for_dashboard(conn: sqlite3.Connection) -> list[dict]:
+    """Return imported PO line items grouped by (po_number, customer),
+    most-recently-imported PO first, joined with the matched product's
+    name and its current (latest) stock status from `checks`."""
+    rows = conn.execute(
+        """
+        SELECT
+            pl.po_number,
+            pl.customer,
+            pl.retailer,
+            pl.description,
+            pl.sku,
+            pl.quantity,
+            pl.match_method,
+            pl.imported_at,
+            p.product_name AS matched_product_name,
+            (
+                SELECT c.status FROM checks c
+                WHERE c.product_id = pl.product_id
+                ORDER BY c.checked_at DESC LIMIT 1
+            ) AS status
+        FROM po_lines pl
+        LEFT JOIN products p ON p.id = pl.product_id
+        ORDER BY pl.imported_at DESC, pl.id
+        """
+    ).fetchall()
+
+    pos: dict[tuple[str, str], dict] = {}
+    order: list[tuple[str, str]] = []
+    for row in rows:
+        key = (row["po_number"], row["customer"])
+        if key not in pos:
+            pos[key] = {
+                "po_number": row["po_number"],
+                "customer": row["customer"],
+                "retailer": row["retailer"],
+                "imported_at": row["imported_at"],
+                "lines": [],
+            }
+            order.append(key)
+        pos[key]["lines"].append(
+            {
+                "description": row["description"],
+                "sku": row["sku"],
+                "quantity": row["quantity"],
+                "product_name": row["matched_product_name"],
+                "status": row["status"],
+                "match_method": row["match_method"],
+            }
+        )
+
+    return [pos[key] for key in order]
 
 
 def main() -> None:

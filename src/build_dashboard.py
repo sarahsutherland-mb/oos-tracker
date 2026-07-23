@@ -14,7 +14,7 @@ from pathlib import Path
 
 from jinja2 import Environment
 
-from .db import connect, unconfirmed_new_products
+from .db import connect, po_lines_for_dashboard, unconfirmed_new_products
 
 OUT_PATH = Path("docs/index.html")
 STALE_DAYS = 10
@@ -109,13 +109,15 @@ _TEMPLATE = """<!doctype html>
   #view-summary:checked ~ #content-summary,
   #view-changes:checked ~ #content-changes,
   #view-new-products:checked ~ #content-new-products,
-  #view-urls:checked ~ #content-urls { display: block; }
+  #view-urls:checked ~ #content-urls,
+  #view-po-check:checked ~ #content-po-check { display: block; }
   #view-retailer:checked ~ .view-tabs label[for="view-retailer"],
   #view-sku:checked ~ .view-tabs label[for="view-sku"],
   #view-summary:checked ~ .view-tabs label[for="view-summary"],
   #view-changes:checked ~ .view-tabs label[for="view-changes"],
   #view-new-products:checked ~ .view-tabs label[for="view-new-products"],
-  #view-urls:checked ~ .view-tabs label[for="view-urls"] {
+  #view-urls:checked ~ .view-tabs label[for="view-urls"],
+  #view-po-check:checked ~ .view-tabs label[for="view-po-check"] {
     background: #fff; color: #1a1a1a; box-shadow: 0 1px 3px rgba(0,0,0,0.08);
   }
 
@@ -195,6 +197,7 @@ _TEMPLATE = """<!doctype html>
 <input type="radio" name="view" id="view-changes">
 <input type="radio" name="view" id="view-new-products">
 <input type="radio" name="view" id="view-urls">
+<input type="radio" name="view" id="view-po-check">
 <div class="view-tabs">
   <label for="view-retailer">By Retailer</label>
   <label for="view-sku">By SKU</label>
@@ -202,6 +205,7 @@ _TEMPLATE = """<!doctype html>
   <label for="view-summary">Per Retailer Summary</label>
   <label for="view-new-products">New Products</label>
   <label for="view-urls">URLs to Fix</label>
+  <label for="view-po-check">PO Orders vs Stock</label>
 </div>
 
 <section class="view-content" id="content-sku">
@@ -449,6 +453,62 @@ _TEMPLATE = """<!doctype html>
 </div>
 
 </section><!-- /content-retailer -->
+
+<section class="view-content" id="content-po-check">
+
+<h2>PO Orders vs Stock</h2>
+<div class="muted" style="margin: -4px 0 12px;">
+  Line items from imported POs (via <code>pogen oos-check</code>), cross-referenced against current stock status.
+</div>
+
+{% if po_ordered_while_oos %}
+<div class="card">
+  <div style="padding: 12px 16px;">
+    <strong>⚠ Ordered while OOS</strong>
+    <ul class="retailer-list" style="margin-top:8px;">
+    {% for r in po_ordered_while_oos %}
+      <li>
+        <span class="badge badge-OOS">OOS</span>
+        {{ r.product_name }}
+        <span class="subtle">— {{ r.po_number }} ({{ r.retailer }}), qty {{ r.quantity }}</span>
+      </li>
+    {% endfor %}
+    </ul>
+  </div>
+</div>
+{% endif %}
+
+{% if po_orders %}
+{% for po in po_orders %}
+<div class="card">
+  <div class="retailer-header" style="padding: 14px 16px 0;">
+    <div class="retailer-h3">{{ po.po_number }} <span class="muted" style="font-weight:400;">— {{ po.retailer }}</span></div>
+    <span class="subtle">imported {{ po.imported_human }}</span>
+  </div>
+  <table>
+    <tr><th>Product</th><th class="num">Qty</th><th>Status</th></tr>
+    {% for line in po.lines %}
+    <tr>
+      <td>
+        {% if line.product_name %}{{ line.product_name }}
+        {% else %}{{ line.description }}<div class="subtle">unmatched</div>
+        {% endif %}
+      </td>
+      <td class="num">{{ line.quantity }}</td>
+      <td>
+        {% if line.status %}<span class="badge badge-{{ line.status }}">{{ line.status.replace("_"," ") }}</span>
+        {% else %}<span class="subtle">—</span>{% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+{% endfor %}
+{% else %}
+<div class="card"><div class="empty">No POs imported yet. Run <code>pogen oos-check &lt;po_file&gt;</code> from po-tool.</div></div>
+{% endif %}
+
+</section><!-- /content-po-check -->
 
 <div class="footer">Generated {{ generated_at }}</div>
 
@@ -818,6 +878,32 @@ def _gather(conn: sqlite3.Connection) -> dict:
     oos_count = sum(b["oos"] for b in retailer_buckets.values())
     total_skus = sum(b["total"] for b in retailer_buckets.values())
 
+    po_orders = []
+    po_ordered_while_oos = []
+    for po in po_lines_for_dashboard(conn):
+        imported_dt = _parse_dt(po["imported_at"])
+        po_orders.append(
+            {
+                "po_number": po["po_number"],
+                "customer": po["customer"],
+                "retailer": po["retailer"],
+                "imported_human": (
+                    _humanize_relative(imported_dt, now) if imported_dt else "—"
+                ),
+                "lines": po["lines"],
+            }
+        )
+        for line in po["lines"]:
+            if line["quantity"] > 0 and line["status"] == "OOS":
+                po_ordered_while_oos.append(
+                    {
+                        "product_name": line["product_name"],
+                        "po_number": po["po_number"],
+                        "retailer": po["retailer"],
+                        "quantity": line["quantity"],
+                    }
+                )
+
     return {
         "last_run": _fmt_run_ts(last_run_dt) if last_run_dt else None,
         "generated_at": _fmt_run_ts(now),
@@ -833,6 +919,8 @@ def _gather(conn: sqlite3.Connection) -> dict:
         "by_retailer": by_retailer,
         "new_products": new_products,
         "history_matrix": history_matrix,
+        "po_orders": po_orders,
+        "po_ordered_while_oos": po_ordered_while_oos,
     }
 
 
