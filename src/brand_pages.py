@@ -54,6 +54,7 @@ from __future__ import annotations
 import json
 import re
 import sqlite3
+import time
 import unicodedata
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
@@ -306,6 +307,55 @@ def _iter_nodes(block: object):
                 yield from _iter_nodes(entry)
 
 
+# ---------- fetching ----------
+
+# Anthropologie's PerimeterX edge challenges the *first* request of a fresh
+# session with a 403 and serves the real page to everything after it —
+# measured 2026-09-23: attempt 1 403, attempts 2-7 all 200. A weekly cron on
+# a cold runner makes that first request the whole run, so a bare `client.get`
+# turns a working scraper into 25 silently missing SKUs. Anthropologie is
+# authoritative (its brand page IS the stock signal, there is no PDP fallback
+# and no sheet row any more), so that gap is invisible rather than loud.
+#
+# Retrying on the same client is what fixes it: httpx keeps the cookie jar
+# across requests, so attempt 2 carries whatever the challenge set.
+#
+# Deliberately short and few. This is a cold-start challenge, not a rate
+# limit — the Shopify checker handles that case separately with a shared
+# 60s cooldown (see checkers/shopify.py). Waiting minutes here would just
+# delay a genuine outage.
+_RETRY_STATUSES = frozenset({403, 429, 500, 502, 503, 504})
+_RETRY_BACKOFF = (2.0, 6.0)  # seconds before attempt 2, then attempt 3
+
+
+def _get_with_retry(client: httpx.Client, url: str) -> httpx.Response:
+    """GET `url`, retrying a challenge/transport failure on the same client.
+
+    Returns the last response even if it still failed, so the caller's
+    `raise_for_status()` reports the real status. Raises the last transport
+    error if every attempt failed to get a response at all.
+    """
+    last_exc: httpx.HTTPError | None = None
+    last_res: httpx.Response | None = None
+
+    for attempt, pause in enumerate((*_RETRY_BACKOFF, None)):
+        try:
+            last_res = client.get(url)
+            last_exc = None
+            if last_res.status_code not in _RETRY_STATUSES:
+                return last_res
+        except httpx.HTTPError as e:
+            last_exc = e
+        if pause is None:
+            break
+        time.sleep(pause)
+
+    if last_res is not None:
+        return last_res
+    assert last_exc is not None  # loop runs at least once
+    raise last_exc
+
+
 # ---------- scrapers ----------
 
 
@@ -315,7 +365,7 @@ def scrape_cult_beauty(client: httpx.Client) -> ScrapeResult:
     containing the full marketing name 'Megababe ...'."""
     res = ScrapeResult(retailer="Cult Beauty")
     try:
-        r = client.get(BRAND_PAGE_URLS["Cult Beauty"])
+        r = _get_with_retry(client, BRAND_PAGE_URLS["Cult Beauty"])
         r.raise_for_status()
     except httpx.HTTPError as e:
         res.error = f"fetch failed: {e}"
@@ -343,7 +393,7 @@ def scrape_gee_beauty(client: httpx.Client) -> ScrapeResult:
     res = ScrapeResult(retailer="Gee Beauty")
     url = "https://geebeauty.ca/collections/megababe/products.json?limit=250"
     try:
-        r = client.get(url)
+        r = _get_with_retry(client, url)
         r.raise_for_status()
         data = r.json()
     except (httpx.HTTPError, ValueError) as e:
@@ -507,7 +557,7 @@ def scrape_anthropologie(client: httpx.Client) -> ScrapeResult:
     """
     res = ScrapeResult(retailer="Anthropologie")
     try:
-        r = client.get(BRAND_PAGE_URLS["Anthropologie"])
+        r = _get_with_retry(client, BRAND_PAGE_URLS["Anthropologie"])
         r.raise_for_status()
     except httpx.HTTPError as e:
         res.error = f"fetch failed: {e}"
@@ -559,7 +609,7 @@ def scrape_asos(client: httpx.Client) -> ScrapeResult:
     """Best-effort httpx fetch of ASOS search page. Akamai may 403."""
     res = ScrapeResult(retailer="ASOS")
     try:
-        r = client.get(BRAND_PAGE_URLS["ASOS"])
+        r = _get_with_retry(client, BRAND_PAGE_URLS["ASOS"])
     except httpx.HTTPError as e:
         res.error = f"fetch failed: {e}"
         return res
