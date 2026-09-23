@@ -14,7 +14,12 @@ from .base import CheckResult, Product, Status
 # Anthropologie + CVS were added 2026-04-30 — both are anti-bot-locked at a
 # tier default Playwright can't crack (PerimeterX and Akamai 403 respectively),
 # and the manual-sheet route is cheaper than the bypass tooling we'd need.
-TRACKED_RETAILERS = ("Target", "Walmart", "ASOS", "Anthropologie", "CVS")
+TRACKED_RETAILERS = ("Target", "Walmart", "ASOS", "CVS")
+# Anthropologie left this list on 2026-08-05 — it's now derived from its brand
+# page (see brand_pages.BRAND_PAGE_AUTHORITATIVE). Dropping it here means any
+# leftover Anthropologie rows in the sheet are ignored rather than reported as
+# "in sheet but not products.csv" noise; the column can be deleted from the
+# sheet whenever convenient.
 
 # Sheet "Stock status" values we recognize (compared after .strip().lower()).
 # Anything else becomes ERROR with the raw value preserved in notes.

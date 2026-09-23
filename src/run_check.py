@@ -8,11 +8,16 @@ Routing:
                             url_quality is irrelevant here, the sheet is the
                             source of truth regardless of what the URL points to
 - url_quality != 'pdp'   -> ERROR row "needs fixing" (no checker call)
-- Gee Beauty             -> ShopifyChecker (Shopify storefront .js endpoint)
+- Anthropologie          -> no per-product call at all; status comes from the
+                            brand page in the reconciliation pass, since
+                            Anthropologie delists OOS PDPs (see
+                            brand_pages.BRAND_PAGE_AUTHORITATIVE)
+- Gee Beauty             -> ShopifyChecker (one collection request for all
+                            SKUs, falling back to per-product .js)
 - Cult Beauty            -> CultBeautyChecker (httpx + JSON-LD)
 - Goop                   -> GoopChecker (Playwright + JSON-LD; CF-protected)
 - Nordstrom              -> NordstromChecker (Playwright + JSON-LD AggregateOffer)
-- Boots                  -> BootsChecker (stub: ERROR; deferred per Incapsula)
+- Boots                  -> BootsChecker (stub: UNKNOWN; deferred per Incapsula)
 - Other Playwright retailers -> skipped until checker exists (no row written)
 """
 
@@ -44,7 +49,18 @@ from .db import (
 )
 
 SHOPIFY_RETAILERS = ("Gee Beauty",)
-MANUAL_RETAILERS = ("Target", "Walmart", "ASOS", "Anthropologie", "CVS")
+# One collection request per Shopify retailer instead of one request per SKU.
+# geebeauty.ca's edge 429s on a burst of ~20 back-to-back product calls, which
+# is what turned the 2026-07-23 run into 20 ERROR / 1 IN_STOCK.
+SHOPIFY_COLLECTION_URLS = {
+    "Gee Beauty": "https://geebeauty.ca/collections/megababe/products.json?limit=250",
+}
+MANUAL_RETAILERS = ("Target", "Walmart", "ASOS", "CVS")
+# Anthropologie was manual until 2026-08-05. It now derives status entirely
+# from its brand page (it delists OOS PDPs, so listed/absent is the whole
+# signal) — see brand_pages.BRAND_PAGE_AUTHORITATIVE. Its products are
+# skipped in the per-product loop below and written by the reconcile pass,
+# so it needs no sheet column and no per-PDP checker.
 # Retailers served by their own bespoke httpx checker (one class per
 # retailer; not Shopify, not the manual sheet). Recon showed these are
 # server-rendered with usable structured data.
@@ -107,7 +123,10 @@ def run() -> int:
             if sheet
             else {}
         )
-        shopify_checkers = {r: ShopifyChecker(r) for r in SHOPIFY_RETAILERS}
+        shopify_checkers = {
+            r: ShopifyChecker(r, collection_url=SHOPIFY_COLLECTION_URLS.get(r))
+            for r in SHOPIFY_RETAILERS
+        }
         httpx_checkers = {"Cult Beauty": CultBeautyChecker()}
 
         # Playwright sync API forbids two `sync_playwright()` runtimes in
@@ -138,6 +157,11 @@ def run() -> int:
 
         try:
             for p in products:
+                if p.retailer in brand_pages.BRAND_PAGE_AUTHORITATIVE:
+                    # Handled wholesale by the reconciliation pass below;
+                    # not a "skip" in the no-checker sense, so it doesn't
+                    # go in the skipped tally.
+                    continue
                 outcome = _dispatch(
                     p,
                     manual_checkers,
@@ -185,6 +209,10 @@ def run() -> int:
             # updated in place by `brand_pages.reconcile`.
             counts["ERROR"] -= recon.downgraded
             counts["OOS"] += recon.downgraded
+            # Authoritative retailers were skipped in the loop above, so
+            # their statuses only exist in the reconcile result.
+            for status, n in recon.authoritative_counts.items():
+                counts[status] += n
         finally:
             for ck in shopify_checkers.values():
                 ck.close()

@@ -42,16 +42,44 @@ def _to_storefront_js_url(url: str) -> str:
     return urlunsplit((parts.scheme, parts.netloc, path, "", ""))
 
 
+def _product_handle(url: str) -> str:
+    """Last path segment of a Shopify PDP url — the product handle.
+
+    `https://geebeauty.ca/products/rosy-pits?x=1` -> `rosy-pits`
+    """
+    path = urlsplit(url).path.rstrip("/")
+    handle = path.rsplit("/", 1)[-1]
+    return handle[:-3] if handle.endswith(".js") else handle
+
+
 class ShopifyChecker:
     """Checker for Shopify storefronts that expose `/products/<handle>.js`.
 
     Treats each PDP as one row — if any variant is available, the product is
-    IN_STOCK. Per-variant tracking is deliberately out of scope for MVP.
+    IN_STOCK, unless the product carries a `variant_match`, in which case that
+    specific variant decides.
+
+    Prefers ONE collection request over N per-product requests. Shopify
+    exposes `/collections/<handle>/products.json?limit=250`, which returns
+    every product in the collection with the same `variants[].available`
+    data the per-product `.js` endpoint gives — so 21 tracked Gee Beauty
+    SKUs (18 distinct PDPs, Mini variants sharing a handle) cost a single
+    call instead of 18. That matters here: geebeauty.ca's Cloudflare edge
+    429s partway through a burst, and the 2026-07-23 run recorded 20 ERROR
+    / 1 IN_STOCK because of it. One request can't trip a rate limit.
+
+    Per-product `.js` remains the fallback for any handle the collection
+    doesn't list, and for stores with no collection configured.
     """
 
     retailer: str
 
-    def __init__(self, retailer: str, client: httpx.Client | None = None) -> None:
+    def __init__(
+        self,
+        retailer: str,
+        client: httpx.Client | None = None,
+        collection_url: str | None = None,
+    ) -> None:
         self.retailer = retailer
         self._client = client or httpx.Client(
             headers=_HEADERS, timeout=15.0, follow_redirects=True
@@ -59,6 +87,11 @@ class ShopifyChecker:
         self._owns_client = client is None
         self._last_request_at: float | None = None
         self._blocked_until: float | None = None
+        self._collection_url = collection_url
+        # handle -> product dict, populated lazily on first check().
+        # None = not yet attempted; {} = attempted and unusable.
+        self._collection: dict[str, dict] | None = None
+        self._collection_error: str | None = None
 
     def close(self) -> None:
         if self._owns_client:
@@ -107,26 +140,73 @@ class ShopifyChecker:
             self._blocked_until = None
         return r2
 
+    def _load_collection(self) -> dict[str, dict]:
+        """Fetch the collection once and index it by product handle.
+
+        Failure is non-fatal and recorded, not raised: `check()` falls back
+        to the per-product endpoint, preserving the old behaviour.
+        """
+        if self._collection is not None:
+            return self._collection
+        self._collection = {}
+        if not self._collection_url:
+            return self._collection
+        try:
+            r = self._get_with_retry(self._collection_url)
+            if r.status_code != 200:
+                self._collection_error = f"HTTP {r.status_code}"
+                return self._collection
+            payload = r.json()
+        except (httpx.HTTPError, ValueError) as e:
+            self._collection_error = f"{type(e).__name__}: {e}"
+            return self._collection
+
+        products = payload.get("products")
+        if not isinstance(products, list):
+            self._collection_error = "no products[] in collection response"
+            return self._collection
+        for entry in products:
+            if not isinstance(entry, dict):
+                continue
+            handle = entry.get("handle")
+            if handle:
+                self._collection[handle] = entry
+        return self._collection
+
     def check(self, product: Product) -> CheckResult:
         now = datetime.now(timezone.utc)
-        endpoint = _to_storefront_js_url(product.url)
 
-        try:
-            r = self._get_with_retry(endpoint)
-        except httpx.HTTPError as e:
-            return CheckResult(Status.ERROR, now, f"request failed: {e}")
+        # Preferred path: this product's handle is in the one-shot collection.
+        record = self._load_collection().get(_product_handle(product.url))
+        source = "collection"
 
-        if r.status_code != 200:
-            return CheckResult(
-                Status.ERROR, now, f"HTTP {r.status_code} from {endpoint}"
-            )
+        if record is None:
+            source = "pdp"
+            endpoint = _to_storefront_js_url(product.url)
+            try:
+                r = self._get_with_retry(endpoint)
+            except httpx.HTTPError as e:
+                return CheckResult(Status.ERROR, now, f"request failed: {e}")
 
-        try:
-            data = r.json()
-        except ValueError:
-            return CheckResult(Status.ERROR, now, "non-JSON response")
+            if r.status_code != 200:
+                return CheckResult(
+                    Status.ERROR, now, f"HTTP {r.status_code} from {endpoint}"
+                )
 
-        variants = data.get("variants")
+            try:
+                record = r.json()
+            except ValueError:
+                return CheckResult(Status.ERROR, now, "non-JSON response")
+
+        # Only annotate the fallback path, so a normal collection-served run
+        # stays quiet in the output.
+        note = None
+        if source == "pdp":
+            note = "via per-product PDP (handle not in collection)"
+            if self._collection_error:
+                note += f"; collection fetch failed: {self._collection_error}"
+
+        variants = record.get("variants")
         if not isinstance(variants, list):
             return CheckResult(Status.ERROR, now, "no variants[] in response")
         if not variants:
@@ -145,8 +225,9 @@ class ShopifyChecker:
             return CheckResult(
                 Status.IN_STOCK if matches[0].get("available") else Status.OOS,
                 now,
+                note,
             )
 
         if any(v.get("available") for v in variants):
-            return CheckResult(Status.IN_STOCK, now)
-        return CheckResult(Status.OOS, now)
+            return CheckResult(Status.IN_STOCK, now, note)
+        return CheckResult(Status.OOS, now, note)

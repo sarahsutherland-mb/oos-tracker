@@ -7,13 +7,24 @@ Output is a static dashboard listing **which products are out of stock and
 where** — that's the primary thing the user wants to see — plus Slack alerts
 when stock changes.
 
-Five retailers are checked automatically. Five (Target, Walmart, ASOS,
-Anthropologie, CVS) have serious anti-bot protection so the user manually
-checks them and logs status in a Google Sheet that this tool reads.
-Anthropologie and CVS were originally planned as automated but were moved to
-the manual sheet on 2026-04-30 — recon found PerimeterX (Anthropologie) and
-Akamai-style 403s (CVS) that default Playwright Chromium can't bypass, and
-the manual route is cheaper than investing in stealth tooling.
+Six retailers are checked automatically. Four (Target, Walmart, ASOS, CVS)
+have serious anti-bot protection so the user manually checks them and logs
+status in a Google Sheet that this tool reads.
+
+**Anthropologie came off the manual sheet on 2026-08-05.** It had been moved
+there on 2026-04-30 after recon found PerimeterX blocking both httpx and
+Playwright. A re-probe found httpx works reliably as long as an
+`Accept-Language` header is sent (Playwright still 403s — the reverse of
+every other retailer here). Because Anthropologie delists an OOS PDP
+entirely, its brand page alone is a complete stock signal, so all 25 SKUs
+are now derived from one request with no PDP fetch and no sheet entry. See
+`brand_pages.BRAND_PAGE_AUTHORITATIVE` and the Anthropologie section of
+RETAILER_KNOWLEDGE.md.
+
+CVS remains manual (Akamai-style 403 on both routes, re-confirmed
+2026-08-05), as do Target (brand page renders but tiles are client-side and
+its OOS signal is per-tile, not absence) and Walmart (PerimeterX
+interstitial).
 
 Runs unattended via GitHub Actions. Zero hosting cost. No paid APIs.
 
@@ -21,13 +32,16 @@ Runs unattended via GitHub Actions. Zero hosting cost. No paid APIs.
 
 - **Python 3.11+**
 - **httpx** for Shopify-style endpoints (Gee Beauty), JSON-LD-rich PDPs
-  (Cult Beauty), Google Sheet fetch
+  (Cult Beauty), brand-page scraping (Anthropologie), Google Sheet fetch.
+  All brand-page fetches go out with `_BROWSER_HEADERS`; the
+  `Accept-Language` entry there is load-bearing, not cosmetic — dropping it
+  turns Anthropologie into a 403.
 - **Playwright** for retailers that need a real browser to load JSON-LD
   or to bypass simple Cloudflare (Goop, Nordstrom). Boots is currently a
-  stub — its PDPs are Incapsula-blocked and bypass tooling hasn't been
-  decided yet.
-- **Google Sheets** as the manual data source for Target, Walmart, ASOS —
-  read via the public "publish to web as CSV" URL, no API auth needed
+  stub reporting UNKNOWN — its PDPs are Incapsula-blocked and bypass
+  tooling hasn't been decided yet.
+- **Google Sheets** as the manual data source for Target, Walmart, ASOS, CVS
+  — read via the public "publish to web as CSV" URL, no API auth needed
 - **SQLite** for state and history (single file in repo)
 - **Static HTML dashboard** generated each run, deployed via GitHub Pages
 - **GitHub Actions** for the weekly cron + Slack webhook notifications
@@ -36,12 +50,16 @@ Runs unattended via GitHub Actions. Zero hosting cost. No paid APIs.
 
 | Source | Retailers | SKU count |
 |---|---|---|
-| Shopify JSON (httpx) | Gee Beauty | 20 |
+| Shopify JSON (httpx, one collection request) | Gee Beauty | 21 |
 | httpx + JSON-LD | Cult Beauty | 23 |
+| httpx + brand page (absence = OOS) | Anthropologie | 25 |
 | Playwright + JSON-LD | Nordstrom, Goop | 27 |
-| Playwright (deferred — Incapsula stub) | Boots | 5 |
-| Manual via Google Sheet | Target, Walmart, ASOS, Anthropologie, CVS | 79 |
-| **Total** | **10 retailers** | **154** |
+| Deferred — Incapsula stub, reports UNKNOWN | Boots | 5 |
+| Manual via Google Sheet | Target, Walmart, ASOS, CVS | 59 |
+| **Total** | **10 retailers** | **160** |
+
+Manual SKUs dropped from 84 to 59 on 2026-08-05 when Anthropologie was
+automated.
 
 ## Repo layout
 

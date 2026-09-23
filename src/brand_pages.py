@@ -1,21 +1,28 @@
 """Brand-page reconciliation pass.
 
 Runs after per-PDP checks. For each retailer with a usable brand page:
+0. For retailers in `BRAND_PAGE_AUTHORITATIVE`, write a status for *every*
+   product from the brand page alone (listed = IN_STOCK, absent = OOS).
+   These retailers have no per-PDP check to reconcile — the brand page is
+   the whole signal, so this replaces both a PDP fetch and a manual sheet
+   entry. Anthropologie is the only one today.
 1. Scrape the page to extract a list of currently-listed Megababe products.
 2. Downgrade this run's `ERROR` rows whose product is *not* on the brand
    page to `OOS` with note `"reconciled-via-brand-page; PDP not found"`.
-   Several retailers (Anthropologie, ASOS, Cult Beauty, Nordstrom)
-   delist OOS PDPs entirely instead of showing a "sold out" message,
-   so a 404'd / category-page-quality URL ERROR very often actually
-   represents OOS.
+   Several retailers (ASOS, Cult Beauty, Nordstrom) delist OOS PDPs
+   entirely instead of showing a "sold out" message, so a 404'd /
+   category-page-quality URL ERROR very often actually represents OOS.
 3. Detect tiles on the brand page that match no `products.csv` row —
    surface as `new_products` rows for the user to triage.
 
 Skipped: retailers without a usable brand page (Boots — brand page
 loads but tile state doesn't reveal in-stock vs OOS) and retailers
-whose brand pages we can't fetch (Anthropologie's PerimeterX block,
-ASOS's Akamai block — these are still attempted, just so the failure
-shows up in the run summary).
+whose brand pages we can't fetch (ASOS's Akamai block — still attempted,
+just so the failure shows up in the run summary).
+
+Anthropologie used to be listed as unfetchable here too. Re-tested
+2026-08-05: it fetches reliably over httpx provided an `Accept-Language`
+header is sent (see `_BROWSER_HEADERS`), though Playwright still 403s.
 
 Matching strategy:
 - All names are normalized via `_normalize_name` before comparison:
@@ -48,7 +55,7 @@ import json
 import re
 import sqlite3
 import unicodedata
-from collections import defaultdict
+from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Callable
@@ -56,7 +63,7 @@ from typing import Callable
 import httpx
 
 from .checkers.base import Product
-from .db import update_check, upsert_new_product
+from .db import record_check, update_check, upsert_new_product
 
 # Brand-page URLs by retailer (source of truth: RETAILER_KNOWLEDGE.md).
 BRAND_PAGE_URLS = {
@@ -73,11 +80,48 @@ BRAND_PAGE_URLS = {
 # Walmart, CVS — handled by the manual sheet).
 SKIP_RETAILERS = {"Boots", "Target", "Walmart", "CVS"}
 
+# Retailers where the brand page is the *complete* stock signal, not just a
+# tie-breaker for ERROR rows: they delist a PDP outright when it goes OOS,
+# so listed == in stock and absent == OOS for every SKU we track. These get
+# a status written for every product from the brand page alone — no per-PDP
+# fetch and no manual sheet entry.
+#
+# Anthropologie qualifies (confirmed by the user: the PDP disappears rather
+# than showing a sold-out state) and its brand page reports its own total,
+# so we can tell a real empty catalog from a partial scrape.
+#
+# ASOS's notes say absence is authoritative there too, but its brand page
+# is still Akamai-blocked (403/timeout as of 2026-08-05) so it stays manual.
+BRAND_PAGE_AUTHORITATIVE = {"Anthropologie"}
+
+# Guard against writing a wholesale "everything is OOS" run off a scrape
+# that technically succeeded but came back suspiciously thin (edge served a
+# stub, DOM changed, catalog genuinely emptied). Below this tile count we
+# record nothing for an authoritative retailer and report it instead.
+_MIN_AUTHORITATIVE_TILES = 1
+
 _UA = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
     "AppleWebKit/537.36 (KHTML, like Gecko) "
     "Chrome/124.0.0.0 Safari/537.36"
 )
+
+# Header set for every httpx brand-page fetch.
+#
+# `Accept-Language` is LOAD-BEARING, not decoration — do not drop it.
+# Anthropologie's PerimeterX edge returns a 780-byte HTTP 403 challenge to
+# a request without it and the full ~850 KB page with it, on otherwise
+# identical requests (measured 2026-08-05, both UA 124 and 126). A
+# real browser always sends the header; requests missing it look automated.
+# This is most likely why the 2026-04-30 recon recorded Anthropologie as
+# hard-blocked to httpx.
+_BROWSER_HEADERS = {
+    "User-Agent": _UA,
+    "Accept": (
+        "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+    ),
+    "Accept-Language": "en-US,en;q=0.9",
+}
 
 
 @dataclass
@@ -92,6 +136,11 @@ class ScrapeResult:
     retailer: str
     tiles: list[BrandTile] = field(default_factory=list)
     error: str | None = None  # set when the brand page fetch / parse failed
+    # The count the page reports for itself ("6 products"), when it states one.
+    # Lets the authoritative pass tell "this catalog really has 6 items" from
+    # "we only managed to parse 1 of them" — the difference between a correct
+    # run and silently marking two dozen SKUs OOS.
+    reported_total: int | None = None
 
 
 @dataclass
@@ -102,6 +151,12 @@ class ReconcileSummary:
     new_products: int = 0
     fetch_errors: dict[str, str] = field(default_factory=dict)
     per_retailer_tiles: dict[str, int] = field(default_factory=dict)
+    # Statuses written by the BRAND_PAGE_AUTHORITATIVE pass, per status name,
+    # so the caller can fold them into the run's own tally.
+    authoritative_counts: Counter[str] = field(default_factory=Counter)
+    # Retailers that are authoritative but whose scrape was unusable, so no
+    # status was written and their last known values still stand.
+    authoritative_skipped: dict[str, str] = field(default_factory=dict)
 
 
 # ---------- name normalization & matching ----------
@@ -137,22 +192,118 @@ def _strip_mini(s: str) -> str:
     return re.sub(r"\s+mini\s*$", "", s, flags=re.IGNORECASE).strip()
 
 
+def _tokens(s: str) -> frozenset[str]:
+    """Split a normalized name into a set of alphanumeric word tokens.
+
+    Splitting on non-alphanumerics (rather than whitespace) so that
+    hyphenated marketing names decompose the same way the plainer
+    products.csv names do: "after-shave" -> {after, shave}.
+    """
+    return frozenset(t for t in re.split(r"[^a-z0-9]+", s) if t)
+
+
 def _is_on_brand_page(product_name: str, normalized_brand_names: set[str]) -> bool:
-    """The CSV row's product is considered "still on the brand page" if
-    its normalized name OR its Mini-stripped form appears as a substring
-    of any normalized brand-page name."""
+    """Is this products.csv row still listed on the retailer's brand page?
+
+    Matches on *token subset* rather than substring: every word of the
+    products.csv name must appear somewhere in the brand-page tile's name.
+    Substring matching failed in both directions on real data —
+
+    - too strict: "Apres Shave Oil" is not a contiguous substring of the
+      tile "Apres Shave Soothing After-Shave Oil", so a listed product
+      read as OOS;
+    - too loose: "Thigh Rescue" *is* a substring of the tile "Thigh
+      Rescue Mini", so a delisted full-size product read as IN_STOCK by
+      matching its own Mini variant — a false in-stock, which is the
+      direction that lets a PO through against stock we don't have.
+
+    The Mini rule is deliberately **asymmetric**:
+
+    - a tile that says Mini cannot satisfy a products.csv row that
+      doesn't (fixes the false-IN_STOCK case above);
+    - a products.csv row that says Mini *can* still match a non-Mini
+      tile, via its Mini-stripped form. That preserves the documented
+      Cult Beauty behaviour where one "(Various Sizes)" tile legitimately
+      covers both "Thigh Rescue 60g" and "Thigh Rescue Mini 23g" (see
+      the KNOWN LIMITATION note in this module's docstring).
+    """
     norm = _normalize_name(product_name)
     if not norm:
         return False
-    candidates = {norm, _strip_mini(norm)}
-    return any(c and any(c in bn for bn in normalized_brand_names) for c in candidates)
+    csv_toks = _tokens(norm)
+    if not csv_toks:
+        return False
+    csv_is_mini = "mini" in csv_toks
+
+    for bn in normalized_brand_names:
+        tile_toks = _tokens(bn)
+        if not tile_toks:
+            continue
+        if "mini" in tile_toks and not csv_is_mini:
+            continue
+        if csv_toks <= tile_toks:
+            return True
+        # Mini row vs non-Mini (shared multi-size) tile: retry without
+        # the size qualifier.
+        if csv_is_mini and "mini" not in tile_toks:
+            if _tokens(_strip_mini(norm)) <= tile_toks:
+                return True
+    return False
 
 
 def _is_in_csv(tile_norm: str, csv_norms: set[str]) -> bool:
-    """A brand-page tile is considered already-known if any normalized
-    products.csv name (for the same retailer) is a substring of the
-    tile's normalized name."""
-    return any(c and c in tile_norm for c in csv_norms)
+    """Is this brand-page tile already represented in products.csv?
+
+    Same token-subset test as `_is_on_brand_page` (order-independent, so
+    it catches word-order and hyphenation differences that substring
+    matching missed), but without the Mini asymmetry — for "do we already
+    know about this tile?" a Mini tile matching a base row is fine, and
+    being permissive here just avoids spurious new-product alerts.
+    """
+    tile_toks = _tokens(tile_norm)
+    if not tile_toks:
+        return False
+    return any(c and _tokens(c) <= tile_toks for c in csv_norms)
+
+
+# ---------- JSON-LD helpers ----------
+
+_LDJSON_RE = re.compile(
+    r'<script[^>]*application/ld\+json[^>]*>(.*?)</script>',
+    re.DOTALL | re.IGNORECASE,
+)
+
+
+def _iter_jsonld(html: str):
+    """Yield every parseable JSON-LD block on the page.
+
+    Deliberately lenient: a retailer shipping one malformed block should
+    not cost us the others (`checkers/_json_ld.find_product_node` takes the
+    same approach, but it stops at the first Product node — here we need to
+    walk whole lists).
+    """
+    for raw in _LDJSON_RE.findall(html):
+        try:
+            yield json.loads(raw.strip())
+        except json.JSONDecodeError:
+            continue
+
+
+def _iter_nodes(block: object):
+    """Flatten a JSON-LD block into the dicts it contains.
+
+    Blocks arrive as either a bare object, a list of objects, or an
+    `@graph` wrapper depending on the retailer, so normalize all three.
+    """
+    if isinstance(block, list):
+        for entry in block:
+            yield from _iter_nodes(entry)
+    elif isinstance(block, dict):
+        yield block
+        graph = block.get("@graph")
+        if isinstance(graph, list):
+            for entry in graph:
+                yield from _iter_nodes(entry)
 
 
 # ---------- scrapers ----------
@@ -324,25 +475,6 @@ _GOOP_EXTRACT_JS = """() => {
 }"""
 
 
-_ANTHRO_EXTRACT_JS = """() => {
-  const out = [];
-  const seen = new Set();
-  for (const a of document.querySelectorAll('a[href*="/shop/"]')) {
-    const href = a.getAttribute('href') || '';
-    if (!href.includes('/shop/megababe-')) continue;
-    const card = a.closest('article') || a.closest('[class*="product"]') || a;
-    const heading = card.querySelector('h2, h3, [class*="name"], [class*="title"]');
-    const text = ((heading ? heading.innerText : a.innerText) || '').replace(/\\s+/g, ' ').trim();
-    if (!text || text.length > 200) continue;
-    if (seen.has(text.toLowerCase())) continue;
-    seen.add(text.toLowerCase());
-    const absUrl = a.href || ('https://www.anthropologie.com' + href);
-    out.push({ raw_title: text, url: absUrl.split('?')[0] });
-  }
-  return out;
-}"""
-
-
 def scrape_nordstrom(browser) -> ScrapeResult:
     return _scrape_via_playwright(
         "Nordstrom", BRAND_PAGE_URLS["Nordstrom"], _NORDSTROM_EXTRACT_JS, browser
@@ -355,15 +487,72 @@ def scrape_goop(browser) -> ScrapeResult:
     )
 
 
-def scrape_anthropologie(browser) -> ScrapeResult:
-    """Best-effort: PerimeterX is expected to block default Chromium.
-    Logs the failure cleanly so the run summary shows it."""
-    return _scrape_via_playwright(
-        "Anthropologie",
-        BRAND_PAGE_URLS["Anthropologie"],
-        _ANTHRO_EXTRACT_JS,
-        browser,
-    )
+def scrape_anthropologie(client: httpx.Client) -> ScrapeResult:
+    """Anthropologie: httpx works, Playwright does not.
+
+    Re-tested 2026-08-05 (the 2026-04-30 recon concluded both routes were
+    PerimeterX-blocked; that is no longer true, and the two routes now
+    differ). Plain httpx with a desktop UA returns the full ~850 KB page,
+    8/8 attempts, while default Playwright Chromium still gets HTTP 403 —
+    so this deliberately does NOT go through `_scrape_via_playwright`.
+
+    The page embeds a JSON-LD `ItemList` whose `itemListElement[].item`
+    entries are `Product` objects with `name` + `url`. That is the whole
+    signal we need: Anthropologie delists a PDP entirely when it goes OOS
+    (see RETAILER_KNOWLEDGE.md), so presence on this list is in-stock and
+    absence is OOS — no per-PDP fetch required.
+
+    Falls back to scraping `/shop/megababe-*` anchor hrefs if the JSON-LD
+    block is missing or its shape changes.
+    """
+    res = ScrapeResult(retailer="Anthropologie")
+    try:
+        r = client.get(BRAND_PAGE_URLS["Anthropologie"])
+        r.raise_for_status()
+    except httpx.HTTPError as e:
+        res.error = f"fetch failed: {e}"
+        return res
+
+    seen: set[str] = set()
+
+    def add(title: str, url: str | None) -> None:
+        title = re.sub(r"\s+", " ", title or "").strip()
+        if not title or title.casefold() in seen:
+            return
+        seen.add(title.casefold())
+        res.tiles.append(BrandTile(raw_title=title, url=url))
+
+    for block in _iter_jsonld(r.text):
+        for node in _iter_nodes(block):
+            if node.get("@type") != "ItemList":
+                continue
+            for el in node.get("itemListElement") or []:
+                item = el.get("item") if isinstance(el, dict) else None
+                if not isinstance(item, dict) or item.get("@type") != "Product":
+                    continue
+                url = item.get("url")
+                add(item.get("name") or "", url.split("?")[0] if url else None)
+
+    if not res.tiles:
+        # Fallback: product slugs carry the name well enough to match on.
+        for slug in dict.fromkeys(
+            re.findall(r'/shop/(megababe-[a-z0-9\-]+)(?:\?|")', r.text, re.I)
+        ):
+            add(
+                slug.replace("-", " "),
+                f"https://www.anthropologie.com/shop/{slug}",
+            )
+
+    if not res.tiles:
+        res.error = "no product tiles parsed (PerimeterX block or DOM change)"
+        return res
+
+    # The page prints its own count ("6 products"). Capture it so the
+    # authoritative pass can refuse a partial scrape.
+    m = re.search(r"(\d+)\s+products?\b", r.text, re.IGNORECASE)
+    if m:
+        res.reported_total = int(m.group(1))
+    return res
 
 
 def scrape_asos(client: httpx.Client) -> ScrapeResult:
@@ -401,13 +590,15 @@ def scrape_asos(client: httpx.Client) -> ScrapeResult:
 # Map retailer -> scraper callable. httpx-based ones take a client;
 # Playwright-based ones take a browser.
 HTTPX_SCRAPERS: dict[str, Callable[[httpx.Client], ScrapeResult]] = {
-    "Cult Beauty": scrape_cult_beauty,
-    "Gee Beauty":  scrape_gee_beauty,
-    "ASOS":        scrape_asos,
+    "Cult Beauty":   scrape_cult_beauty,
+    "Gee Beauty":    scrape_gee_beauty,
+    "ASOS":          scrape_asos,
+    # httpx, not Playwright — Playwright is the route that 403s here.
+    # See scrape_anthropologie's docstring.
+    "Anthropologie": scrape_anthropologie,
 }
 PLAYWRIGHT_SCRAPERS: dict[str, Callable[[object], ScrapeResult]] = {
     "Nordstrom":     scrape_nordstrom,
-    "Anthropologie": scrape_anthropologie,
     # Goop deliberately omitted: its tile DOM puts product titles outside
     # the anchor element my generic extractor handles (recon found only
     # "quickshop" text). Goop carries 2 known SKUs and rarely changes;
@@ -448,7 +639,7 @@ def reconcile(
     # product detection too, even if there are no ERRORs to reconcile).
     scrape_results: dict[str, ScrapeResult] = {}
     with httpx.Client(
-        headers={"User-Agent": _UA, "Accept": "text/html,*/*"},
+        headers=_BROWSER_HEADERS,
         follow_redirects=True,
         timeout=20.0,
     ) as client:
@@ -461,6 +652,56 @@ def reconcile(
         if sr.error:
             summary.fetch_errors[retailer] = sr.error
         summary.per_retailer_tiles[retailer] = len(sr.tiles)
+
+    # Pass 0: for retailers where the brand page IS the stock signal, write a
+    # status for every product from the scrape alone. Runs before the ERROR
+    # pass so those retailers never reach it — they have no per-PDP check to
+    # reconcile in the first place.
+    products_by_retailer: dict[str, list[Product]] = defaultdict(list)
+    for p in products:
+        products_by_retailer[p.retailer].append(p)
+
+    for retailer in sorted(BRAND_PAGE_AUTHORITATIVE):
+        retailer_products = products_by_retailer.get(retailer, [])
+        if not retailer_products:
+            continue
+        sr = scrape_results.get(retailer)
+        if sr is None:
+            summary.authoritative_skipped[retailer] = "no brand-page scraper"
+            continue
+        if sr.error:
+            summary.authoritative_skipped[retailer] = sr.error
+            continue
+        if len(sr.tiles) < _MIN_AUTHORITATIVE_TILES:
+            # Treat as a failed scrape, not as "the whole catalog is OOS" —
+            # silently marking every SKU OOS is the expensive wrong answer.
+            summary.authoritative_skipped[retailer] = (
+                f"only {len(sr.tiles)} tile(s) parsed; refusing to mark "
+                f"{len(retailer_products)} product(s) OOS off a thin scrape"
+            )
+            continue
+        if sr.reported_total is not None and len(sr.tiles) < sr.reported_total:
+            # The page says it lists more products than we extracted, so the
+            # scrape is incomplete and every missing tile would read as OOS.
+            summary.authoritative_skipped[retailer] = (
+                f"partial scrape: page reports {sr.reported_total} products "
+                f"but only {len(sr.tiles)} parsed"
+            )
+            continue
+
+        normalized_brand_names = {_normalize_name(t.raw_title) for t in sr.tiles}
+        for p in retailer_products:
+            on_page = _is_on_brand_page(p.name, normalized_brand_names)
+            status = "IN_STOCK" if on_page else "OOS"
+            record_check(
+                conn,
+                p.id,
+                status,
+                now_iso,
+                "brand-page authoritative: "
+                + ("listed" if on_page else "not listed"),
+            )
+            summary.authoritative_counts[status] += 1
 
     # Pass 1: downgrade ERRORs whose product is missing from the brand page
     for retailer, errors in errors_by_retailer.items():
@@ -512,6 +753,17 @@ def reconcile(
 
 
 def print_summary(summary: ReconcileSummary) -> None:
+    if summary.authoritative_counts:
+        detail = ", ".join(
+            f"{n} {status}"
+            for status, n in sorted(summary.authoritative_counts.items())
+        )
+        print(f"Brand-page authoritative statuses written: {detail}")
+    for retailer, why in summary.authoritative_skipped.items():
+        print(
+            f"  {retailer}: no status written ({why}) — last known "
+            f"values left in place"
+        )
     print(
         f"Brand-page reconciliation: {summary.downgraded} ERRORs downgraded "
         f"to OOS, {summary.new_products} new products detected, "

@@ -9,7 +9,21 @@ from typing import Iterator
 DEFAULT_DB_PATH = Path("data.db")
 DEFAULT_PRODUCTS_CSV = Path("products.csv")
 
-MANUAL_RETAILERS = {"Target", "Walmart", "ASOS", "Anthropologie", "CVS"}
+# Drives the `products.source` column, which in turn drives checker routing
+# (`run_check._dispatch` sends source == "manual" to the sheet) and the
+# dashboard's "stale manual entry" nag.
+#
+# Keep in sync with `run_check.MANUAL_RETAILERS` and
+# `checkers.manual_sheet.TRACKED_RETAILERS`. Defined here rather than imported
+# because db.py is the lowest layer — brand_pages and the checkers import it,
+# so it can't import them back.
+MANUAL_RETAILERS = {"Target", "Walmart", "ASOS", "CVS"}
+
+# Retailers whose status comes wholesale from their brand page rather than a
+# per-product check or the sheet (see brand_pages.BRAND_PAGE_AUTHORITATIVE).
+# Given their own source value so the dashboard doesn't tag them "manual" and
+# the stale-sheet nag doesn't chase rows nobody maintains by hand any more.
+BRAND_PAGE_RETAILERS = {"Anthropologie"}
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS products (
@@ -82,7 +96,11 @@ def init_schema(conn: sqlite3.Connection) -> None:
 
 
 def _source_for(retailer: str) -> str:
-    return "manual" if retailer in MANUAL_RETAILERS else "automated"
+    if retailer in MANUAL_RETAILERS:
+        return "manual"
+    if retailer in BRAND_PAGE_RETAILERS:
+        return "brand_page"
+    return "automated"
 
 
 def _read_csv(csv_path: Path | str) -> dict[tuple[str, str], tuple]:

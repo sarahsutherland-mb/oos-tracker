@@ -31,22 +31,92 @@ debugging any retailer-specific checker.
 - Brand page is the source of truth for which products Walmart still lists
 - Status logged in user's manual Google Sheet
 
-### Gee Beauty (Shopify, automated)
+### Gee Beauty (Shopify, automated — ONE collection request since 2026-08-05)
 - "Notify me when available" button replaces "Add to cart" when OOS
 - Per-variant: a single PDP may have Original in stock and Mini OOS (or vice versa)
 - The Shopify `.json` endpoint returns `available: true/false` per variant — match
   the variant by size (e.g., 2.6oz = Original, 1.0oz = Mini)
 
-### Anthropologie (MANUAL — PerimeterX block, sheet route adopted 2026-04-30)
+**Rate limiting — solved by using the collection endpoint.** Per-product
+`/products/<handle>.js` calls trip geebeauty.ca's Cloudflare edge partway
+through a burst: the 2026-07-23 run recorded **20 ERROR / 1 IN_STOCK**, all
+`HTTP 429`, making the retailer's data useless. Throttling and shared-cooldown
+retry (both still in `ShopifyChecker`) were not enough.
 
-Anthropologie was moved into the manual Google Sheet flow alongside
-Target/Walmart/ASOS/CVS on 2026-04-30. Anti-bot bypass tooling
-(stealth plugins, paid services) was deemed not worth the cost at
-current cadence. The recon notes below are kept for the day we revisit.
+Fix: fetch the whole collection in a single request —
+
+```
+https://geebeauty.ca/collections/megababe/products.json?limit=250
+```
+
+It returns every product with the same `variants[].available` data the
+per-product endpoint gives, so all **21 tracked SKUs (18 distinct PDPs —
+Mini variants share a handle) now cost 1 HTTP request instead of 18**, and
+one request cannot trip a rate limit. Verified 2026-08-05: 21/21 products
+resolved, 0 ERROR, `variant_match` Original/Mini still honored.
+
+Per-product `.js` remains the fallback for any handle the collection doesn't
+list (currently none). `/collections/megababe.js` does **not** exist — 404;
+it must be `/products.json` under the collection path.
+
+### Anthropologie (AUTOMATED via brand page — httpx, since 2026-08-05)
+
+**Status: no longer manual.** Came off the Google Sheet on 2026-08-05.
+
+**The unblock — `Accept-Language` is the whole trick.** The 2026-04-30
+recon below concluded Anthropologie was PerimeterX-blocked to both httpx
+and Playwright. Re-tested 2026-08-05, that is wrong in a specific and
+recoverable way:
+
+| Request | Result |
+|---|---|
+| httpx, UA only, **no `Accept-Language`** | HTTP 403, 780-byte challenge |
+| httpx, UA + **`Accept-Language: en-US,en;q=0.9`** | **HTTP 200, ~850 KB, 8/8 attempts** |
+| default Playwright Chromium (any headers tried) | HTTP 403 |
+
+The header is load-bearing and the UA version is irrelevant (124 and 126
+behave identically). A real browser always sends `Accept-Language`;
+requests without it look automated. This is almost certainly what the
+April recon hit — so **httpx is the working route here and Playwright is
+the broken one**, which is the reverse of every other retailer in this
+file. See `_BROWSER_HEADERS` in `src/brand_pages.py`; do not remove that
+header.
+
+**Why the brand page is sufficient (no PDP fetch at all).** Anthropologie
+delists an OOS PDP entirely (confirmed by user, unchanged). So brand-page
+presence == in stock, absence == OOS, for every SKU. The page embeds a
+JSON-LD `ItemList` whose `itemListElement[].item` entries are `Product`
+objects with clean `name` + `url`, and it self-reports its own total
+("6 products"), so a real empty catalog is distinguishable from a partial
+scrape. Not paginated at current catalog size; `?page=2` returns 403.
+
+Implemented as `brand_pages.BRAND_PAGE_AUTHORITATIVE` — a pass that writes
+a status for *every* product of such a retailer, rather than only
+downgrading ERROR rows the way the original reconciliation pass did.
+Guarded by `_MIN_AUTHORITATIVE_TILES`: a scrape that returns suspiciously
+few tiles writes nothing and reports, instead of silently marking the
+whole catalog OOS.
+
+**Validation against the last manual sheet (2026-07-23 → 2026-08-05):**
+22 of 25 SKUs agreed. The 3 differences were genuine stock movement over
+the two-week gap (Body Dust IN_STOCK→OOS, Dust Puff and Smoothie Deo
+OOS→IN_STOCK). Two *other* mismatches seen during development turned out
+to be matcher bugs, now fixed — see the token-subset note below.
+
+**Name-matching caveat that bit us here.** With 25 CSV rows against 6
+tiles, the matcher decides everything, and substring matching failed both
+ways: "Apres Shave Oil" isn't a contiguous substring of the tile "Apres
+Shave Soothing After-Shave Oil" (false OOS), and "Thigh Rescue" *is* a
+substring of "Thigh Rescue Mini", so a delisted full-size product matched
+its own Mini variant (false IN_STOCK — the dangerous direction, since a
+false in-stock is what lets a PO through against stock we don't have).
+`_is_on_brand_page` now matches on token subset with an asymmetric Mini
+rule. Any future brand-page retailer should be spot-checked for the same
+class of bug.
 
 ---
 
-**Recon findings (2026-04-30):**
+**Recon findings (2026-04-30) — superseded above, kept for history:**
 
 
 **Recon performed 2026-04-30** — both httpx and default Playwright
@@ -348,6 +418,20 @@ JSON-LD's SKU is null, use visible "Add to Bag" presence instead, and
 
 ### Boots (PARTIAL — brand page works, PDPs Incapsula-blocked)
 
+**Reports UNKNOWN, not IN_STOCK (changed 2026-08-05).** `BootsChecker`
+previously returned `IN_STOCK` on the reasoning that Boots had never been
+observed OOS. That made 5 never-checked SKUs indistinguishable from
+verified ones: the dashboard displayed them as confirmed stock and the
+`po_lines` PO cross-reference treated them as safe to order against. A
+presumption isn't an observation, so it now returns `UNKNOWN` — which keeps
+the gap visible rather than laundering it into a positive signal. (`UNKNOWN`
+rather than `ERROR`: no check runs at all, so nothing actually failed.)
+
+Brand page still loads fine (re-confirmed 2026-08-05: Playwright, 1.1 MB,
+title "Megababe - Boots"), so a brand-page-presence checker remains the
+obvious next step for these 5 SKUs — generic tile selectors found 0 tiles,
+so it needs real selector work.
+
 **Recon performed 2026-04-30.** Mixed result:
 
 - **Brand page** (`https://www.boots.com/megababe`): loads cleanly via
@@ -441,13 +525,24 @@ the manual-sheet path is the clear win.
 
 ## Recon comparison table — 2026-04-30
 
+> **Re-probed 2026-08-05.** Two rows below are out of date: Anthropologie is
+> no longer blocked (httpx + `Accept-Language`), and Gee Beauty now uses one
+> collection request rather than per-product calls. Still-confirmed blocks as
+> of 2026-08-05: **ASOS** (httpx read timeout, Playwright 403 "Access
+> Denied"), **CVS** (403 both routes), **Walmart** (Playwright hits the
+> PerimeterX "Robot or human?" interstitial). **Target**'s brand page does
+> render (Playwright 200, "Megababe products at Target"), but its tiles are
+> client-side and generic selectors extracted 0 — it remains manual pending
+> real selector work, and note its signal is per-tile ("Check stores" =
+> OOS), not mere absence, so the brand-page-absence pattern won't transfer.
+
 | Retailer | Transport | Primary signal | Confirmation | Variants in PDP? | Brand page useful for OOS? |
 |---|---|---|---|---|---|
 | Cult Beauty | httpx | JSON-LD `Product` / `ProductGroup` `availability` | `data-stock` attr on size button | YES — `ProductGroup.hasVariant[]` keyed by SKU | tile-text "Notify Me" reliable for OOS |
 | Goop | Playwright (Cloudflare blocks httpx site-wide) | JSON-LD `Product` `availability` | visible "add to waitlist" button | NO — single-variant only | NO — tiles show no stock state |
 | **Nordstrom** | **Playwright** (httpx returns SPA skeleton) | JSON-LD `Product` `AggregateOffer.availability` | visible "Add to Bag" button (no SKU exposed in JSON-LD) | rolled-up via `AggregateOffer` (per-size detail in inline state JSON if needed) | NO — tiles have no stock marker; absence = delisted only |
 | **Boots** | **brand page only — PDPs Incapsula-blocked** | brand-page tile presence → "still carried" | n/a (no PDP access) | n/a | LIMITED — tile presence ≠ in stock; tile absence = delisted only |
-| **Anthropologie** | **BLOCKED (PerimeterX)** | — | — | likely color/scent share-PDPs (per `products.csv`) | also blocked |
+| ~~**Anthropologie**~~ | ~~**BLOCKED (PerimeterX)**~~ **SUPERSEDED 2026-08-05 — httpx works with `Accept-Language`; see the Anthropologie section above** | JSON-LD `ItemList` on brand page | n/a (absence = OOS) | likely color/scent share-PDPs (per `products.csv`) | **YES — brand page is the authoritative signal** |
 | **CVS** | **BLOCKED (Akamai-style 403)** | — | — | n/a (only 2 SKUs) | also blocked |
 | Gee Beauty | httpx | Shopify `.js` storefront endpoint | n/a | per-variant via Shopify variants[] | n/a (already Shopify-direct) |
 
