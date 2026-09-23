@@ -34,3 +34,6 @@ Thumbs.db
 
 # Claude Code (local-only settings)
 .claude/settings.local.json
+
+# Run output from the weekly check (kept as an Actions artifact instead).
+run.log

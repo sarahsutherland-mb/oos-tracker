@@ -416,6 +416,33 @@ Goop with two adjustments: (1) don't try to cross-check by SKU since
 JSON-LD's SKU is null, use visible "Add to Bag" presence instead, and
 (2) acknowledge the AggregateOffer rollup limitation in `notes`.
 
+**RE-PROBED 2026-09-23 — now blocking every PDP.**
+
+The intermittent redirect documented above is no longer intermittent. A
+full run returned ERROR for all 25 SKUs, and a controlled probe returned
+`siteclosed.nordstrom.com/invitation.html` on 18 of 18 attempts.
+
+Key detail for anyone debugging this: **the redirect is client-side and
+happens after `domcontentloaded`.** A probe that checks `page.url`
+straight after navigation sees the real PDP URL and reads as a success —
+only a check after `networkidle` sees the block. Two separate probes
+today looked like passes for exactly this reason before the measurement
+was corrected.
+
+Ruled out, each tested directly:
+- **Rate limiting / bursts** — 5s gaps between requests: still 6/6 blocked.
+- **Session or cookie state** — a fresh browser context per product:
+  still 6/6 blocked.
+- **The pinned `Chrome/124` UA** contradicting the bundled Chromium
+  (147 as of today) — blocked with and without the override.
+
+So this is not a throttling problem and not a checker bug. It sits at the
+same tier Anthropologie did on 2026-04-30: a real anti-bot decision
+(stealth tooling, residential proxy, or a paid unblocker), not an
+afternoon's work. The brand page is blocked too, so reconciliation can't
+cover for it either — these SKUs correctly stay ERROR rather than being
+downgraded to OOS.
+
 ### Boots (PARTIAL — brand page works, PDPs Incapsula-blocked)
 
 **Reports UNKNOWN, not IN_STOCK (changed 2026-08-05).** `BootsChecker`

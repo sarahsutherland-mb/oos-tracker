@@ -32,6 +32,7 @@ from dotenv import load_dotenv
 from playwright.sync_api import sync_playwright
 
 from . import brand_pages
+from .notify import notify
 from .checkers.base import CheckResult, Product, Status
 from .checkers.boots import BootsChecker
 from .checkers.cult_beauty import CultBeautyChecker
@@ -101,6 +102,10 @@ def _resolve_sheet_url() -> str | None:
 
 def run() -> int:
     load_dotenv()
+    # Stamped before any check is recorded, so the Slack alert's window is
+    # "this run" rather than a fixed number of days -- a re-run on the same
+    # day then doesn't re-announce what the earlier one already sent.
+    run_started_at = datetime.now(timezone.utc).isoformat()
     sheet_url = _resolve_sheet_url()
     if sheet_url is None:
         print(
@@ -226,6 +231,12 @@ def run() -> int:
                 pw_runtime.stop()
             if sheet is not None:
                 sheet.close()
+
+        # Inside the connection, and after reconciliation: the alert reads
+        # the `checks` rows as finally written, including the ERROR -> OOS
+        # downgrades the brand-page pass applies in place.
+        print()
+        notify(conn, run_started_at)
 
     print()
     print("Summary:")

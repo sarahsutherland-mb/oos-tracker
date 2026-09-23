@@ -1,0 +1,90 @@
+name: Weekly stock check
+
+# 14:00 UTC is 9am Eastern in winter and 10am in summer -- GitHub cron has no
+# timezone, and an hour's drift doesn't matter for a weekly retail check.
+# `workflow_dispatch` is the one to use when testing changes; don't wait a week.
+on:
+  schedule:
+    - cron: "0 14 * * 1"
+  workflow_dispatch:
+
+# The run commits data.db and docs/index.html back to main, so two overlapping
+# runs would race on the same files. Queue them instead, and never cancel one
+# midway -- a half-finished run still has checks worth keeping.
+concurrency:
+  group: weekly-check
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    # Scraping ten retailers, a few with a real browser. The default 360min
+    # would let a hung fetch burn the day; 45 is well clear of a normal run.
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --extra dev
+
+      - name: Install Chromium for Playwright
+        # Only chromium: Goop and Nordstrom are the sole browser-backed
+        # checkers and both run on it. `--with-deps` pulls the system
+        # libraries the headless browser needs on a bare runner.
+        run: uv run playwright install --with-deps chromium
+
+      - name: Run tests
+        # Cheap, and they cover the retry that stands between a cold-start
+        # 403 and 25 silently missing Anthropologie SKUs. A broken run is
+        # worth catching before it writes to the database.
+        run: uv run pytest tests/ -q
+
+      - name: Check stock
+        env:
+          MANUAL_SHEET_URL: ${{ secrets.MANUAL_SHEET_URL }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          DASHBOARD_URL: ${{ vars.DASHBOARD_URL }}
+        # Tee rather than redirect: the per-product lines stay visible in the
+        # Actions log AND get kept as an artifact, since the dashboard shows
+        # the state a run ended in but not how it got there.
+        run: |
+          set -o pipefail
+          uv run python -m src.run_check 2>&1 | tee run.log
+
+      - name: Build dashboard
+        run: uv run python -m src.build_dashboard
+
+      - name: Commit results
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data.db docs/index.html
+          # A run that changed nothing still rewrites no bytes -- `git commit`
+          # would fail on an empty index and fail the whole job with it.
+          if git diff --staged --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+          git commit -m "Weekly stock check: $(date -u +%Y-%m-%d)"
+          git push
+
+      - name: Save the run log
+        # `always()`, because the run that fails is the one whose log is
+        # worth reading.
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: run-log
+          path: run.log
+          retention-days: 30
+          if-no-files-found: ignore
