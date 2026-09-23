@@ -39,9 +39,32 @@ class Product:
 
 @dataclass(frozen=True)
 class CheckResult:
+    """One product's state at one moment.
+
+    Price is optional and absent for most retailers: the manual sheet has no
+    price column, and a blocked retailer has no page to read one from. `None`
+    means "not observed", never "free" -- so a missing price is stored as NULL
+    and skipped by the discount logic rather than compared as zero.
+
+    Money is integer minor units (cents/pence) to keep float drift out of
+    equality checks, and `currency` is not optional once `price_cents` is set:
+    these retailers quote CAD, EUR and USD, so a bare number is meaningless.
+    """
+
     status: Status
     checked_at: datetime
     notes: str | None = None
+    price_cents: int | None = None
+    # What the retailer says the price would normally be -- Shopify's
+    # `compare_at_price` and its equivalents. Set only when the retailer
+    # publishes one AND it is above the current price; a compare-at that
+    # matches the price is just the price, not a discount.
+    list_price_cents: int | None = None
+    currency: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.price_cents is not None and not self.currency:
+            raise ValueError("price_cents requires a currency")
 
 
 class Checker(Protocol):

@@ -65,6 +65,7 @@ import httpx
 
 from .checkers.base import Product
 from .db import record_check, update_check, upsert_new_product
+from .pricing import to_cents
 
 # Brand-page URLs by retailer (source of truth: RETAILER_KNOWLEDGE.md).
 BRAND_PAGE_URLS = {
@@ -130,6 +131,12 @@ class BrandTile:
     """One product as it appears on a retailer's brand page."""
     raw_title: str        # full marketing-y name, e.g. "Megababe Bidet Bar 127g"
     url: str | None       # PDP url linked from the tile, if extractable
+    # Anthropologie's ItemList publishes `offers.price` per tile, so an
+    # authoritative retailer gets its price from the same single request that
+    # decides its stock — no extra fetch. None for tiles without one, and for
+    # every retailer whose brand page doesn't carry prices.
+    price_cents: int | None = None
+    currency: str | None = None
 
 
 @dataclass
@@ -250,6 +257,21 @@ def _is_on_brand_page(product_name: str, normalized_brand_names: set[str]) -> bo
             if _tokens(_strip_mini(norm)) <= tile_toks:
                 return True
     return False
+
+
+def _matching_priced_tile(
+    product_name: str, priced_tiles: dict[str, "BrandTile"]
+) -> "BrandTile | None":
+    """The tile a product matched, when that tile carried a price.
+
+    Runs `_is_on_brand_page` against one tile at a time so the price is
+    attributed by exactly the rule that decided the product was in stock --
+    a looser match here could price a Mini from its full-size tile.
+    """
+    for norm, tile in priced_tiles.items():
+        if _is_on_brand_page(product_name, {norm}):
+            return tile
+    return None
 
 
 def _is_in_csv(tile_norm: str, csv_norms: set[str]) -> bool:
@@ -565,12 +587,36 @@ def scrape_anthropologie(client: httpx.Client) -> ScrapeResult:
 
     seen: set[str] = set()
 
-    def add(title: str, url: str | None) -> None:
+    def add(
+        title: str,
+        url: str | None,
+        offers: object = None,
+    ) -> None:
         title = re.sub(r"\s+", " ", title or "").strip()
-        if not title or title.casefold() in seen:
+        if not title:
             return
-        seen.add(title.casefold())
-        res.tiles.append(BrandTile(raw_title=title, url=url))
+        # Deduplicate on the URL, falling back to the name only when a tile
+        # has no link. Anthropologie lists two distinct products both named
+        # "Megababe Daily Deodorant" (.../megababe-daily-deodorant and
+        # .../megababe-daily-deodorant2). Keying on the name collapsed them
+        # into one tile, leaving 18 tiles against a page that announces 19 --
+        # which the partial-scrape guard in `reconcile` reads as a broken
+        # scrape and refuses, silently skipping all 25 SKUs on every run.
+        key = url or title.casefold()
+        if key in seen:
+            return
+        seen.add(key)
+        cents = currency = None
+        if isinstance(offers, dict):
+            cents = to_cents(offers.get("price"))
+            raw_currency = offers.get("priceCurrency")
+            if cents is not None and isinstance(raw_currency, str) and raw_currency.strip():
+                currency = raw_currency.strip().upper()
+            else:
+                cents = None  # a price with no currency is not storable
+        res.tiles.append(
+            BrandTile(raw_title=title, url=url, price_cents=cents, currency=currency)
+        )
 
     for block in _iter_jsonld(r.text):
         for node in _iter_nodes(block):
@@ -581,7 +627,11 @@ def scrape_anthropologie(client: httpx.Client) -> ScrapeResult:
                 if not isinstance(item, dict) or item.get("@type") != "Product":
                     continue
                 url = item.get("url")
-                add(item.get("name") or "", url.split("?")[0] if url else None)
+                add(
+                    item.get("name") or "",
+                    url.split("?")[0] if url else None,
+                    item.get("offers"),
+                )
 
     if not res.tiles:
         # Fallback: product slugs carry the name well enough to match on.
@@ -740,9 +790,16 @@ def reconcile(
             continue
 
         normalized_brand_names = {_normalize_name(t.raw_title) for t in sr.tiles}
+        priced_tiles = {
+            _normalize_name(t.raw_title): t for t in sr.tiles if t.price_cents
+        }
         for p in retailer_products:
             on_page = _is_on_brand_page(p.name, normalized_brand_names)
             status = "IN_STOCK" if on_page else "OOS"
+            # A delisted product has no tile and so no price. Leaving it NULL
+            # is right: we don't know what it costs now, and carrying the last
+            # known price forward would make a stale number look observed.
+            tile = _matching_priced_tile(p.name, priced_tiles) if on_page else None
             record_check(
                 conn,
                 p.id,
@@ -750,6 +807,8 @@ def reconcile(
                 now_iso,
                 "brand-page authoritative: "
                 + ("listed" if on_page else "not listed"),
+                price_cents=tile.price_cents if tile else None,
+                currency=tile.currency if tile else None,
             )
             summary.authoritative_counts[status] += 1
 

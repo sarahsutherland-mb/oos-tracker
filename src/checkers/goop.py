@@ -163,7 +163,12 @@ class GoopChecker:
                     f"JSON-LD/waitlist disagree: availability="
                     f"{result.raw_availability} waitlist_visible={waitlist_visible}",
                 )
-            return CheckResult(result.status, now)
+            return CheckResult(
+                result.status,
+                now,
+                price_cents=result.price_cents,
+                currency=result.currency,
+            )
         finally:
             try:
                 page.close()

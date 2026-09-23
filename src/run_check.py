@@ -189,6 +189,9 @@ def run() -> int:
                     result.status.value,
                     checked_at_iso,
                     result.notes,
+                    price_cents=result.price_cents,
+                    list_price_cents=result.list_price_cents,
+                    currency=result.currency,
                 )
                 counts[result.status.value] += 1
                 if result.status == Status.ERROR:

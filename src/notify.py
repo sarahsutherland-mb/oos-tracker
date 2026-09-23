@@ -22,6 +22,8 @@ import urllib.request
 from collections import Counter
 from dataclasses import dataclass
 
+from .pricing import Discount, current_discounts, format_price
+
 # A transition worth a line in Slack, and the words for it. Anything not
 # listed is a state change we don't have a story for (UNKNOWN -> ERROR, say)
 # and is counted under "other" rather than given a confident label.
@@ -85,13 +87,16 @@ def transitions_since(conn: sqlite3.Connection, since_iso: str) -> list[Transiti
 
 
 def format_message(
-    transitions: list[Transition], dashboard_url: str | None = None
+    transitions: list[Transition],
+    dashboard_url: str | None = None,
+    discounts: list[Discount] | None = None,
 ) -> str | None:
     """The message, or None when there is nothing worth sending.
 
     Pure, so the wording can be checked without a webhook and without a run.
     """
-    if not transitions:
+    discounts = discounts or []
+    if not transitions and not discounts:
         return None
 
     went_oos = [t for t in transitions if t.curr == "OOS" and t.prev != "ERROR"]
@@ -105,6 +110,8 @@ def format_message(
         headline_bits.append(f"{len(back)} back in stock")
     if errors:
         headline_bits.append(f"{len(errors)} now erroring")
+    if discounts:
+        headline_bits.append(f"{len(discounts)} discounted")
     headline = ", ".join(headline_bits) or f"{len(transitions)} status changes"
 
     # Which retailers failed wholesale? Those get one line, not twenty-five.
@@ -127,6 +134,21 @@ def format_message(
             continue  # already covered by the retailer-wide line above
         what = _HEADLINES.get((t.prev, t.curr), f"{t.prev} → {t.curr}")
         lines.append(f"• {t.product_name} · {t.retailer} — {what}")
+    if discounts:
+        lines.append("")
+        lines.append("*Discounted*")
+        for d in discounts:
+            # Name the source of the comparison. "Was" is the retailer's own
+            # claim; "down from" is only our previous observation, and the
+            # difference matters if anyone acts on it.
+            basis = "was" if d.is_retailer_advertised else "down from"
+            lines.append(
+                f"• {d.product_name} · {d.retailer} — "
+                f"{format_price(d.price_cents, d.currency)} "
+                f"({basis} {format_price(d.was_cents, d.currency)}, "
+                f"{d.percent_off}% off)"
+            )
+
     if dashboard_url:
         lines.append(f"<{dashboard_url}|Open the dashboard>")
     return "\n".join(lines)
@@ -161,11 +183,21 @@ def notify(conn: sqlite3.Connection, since_iso: str) -> None:
         print(f"[slack] could not read transitions: {e}")
         return
 
-    if not changes:
-        print("[slack] no status changes this run; no message sent")
+    try:
+        discounts = current_discounts(conn)
+    except sqlite3.Error as e:
+        print(f"[slack] could not read prices: {e}")
+        discounts = []
+
+    if not changes and not discounts:
+        print("[slack] nothing changed this run; no message sent")
         return
 
-    text = format_message(changes, os.environ.get("DASHBOARD_URL", "").strip() or None)
+    text = format_message(
+        changes,
+        os.environ.get("DASHBOARD_URL", "").strip() or None,
+        discounts,
+    )
     if text is None:
         return
 

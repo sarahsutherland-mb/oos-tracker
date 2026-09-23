@@ -7,6 +7,7 @@ from urllib.parse import urlsplit, urlunsplit
 import httpx
 
 from .base import CheckResult, Checker, Product, Status
+from ..pricing import to_cents
 
 # Pretend to be a real browser. Shopify's storefront JSON is public, but some
 # stores (and CDN frontends) reject default httpx UA strings.
@@ -31,6 +32,36 @@ _HEADERS = {
 _MIN_REQUEST_INTERVAL = 1.5  # seconds between requests to the same checker
 _MAX_RETRY_WAIT = 90.0  # cap on how long we honor a Retry-After value
 _DEFAULT_BACKOFF = 5.0  # seconds; used if 429 has no Retry-After header
+
+
+# Shopify quotes decimal strings ("20.00") and publishes `compare_at_price`
+# when an item is marked down -- the one retailer here that states a discount
+# outright rather than leaving it to be inferred from last week's price.
+# Currency isn't in products.json, so it's pinned per retailer from the
+# storefront's own /cart.js (Gee Beauty: CAD, confirmed 2026-09-23).
+_CURRENCIES = {"Gee Beauty": "CAD"}
+
+
+def _variant_price(variant: dict, currency: str | None) -> dict:
+    """Price fields for `CheckResult`, from the variant we judged stock on.
+
+    Taken from that same variant deliberately: on a multi-size product the
+    price that matters is the one attached to the size whose availability we
+    just reported.
+    """
+    if currency is None:
+        return {}
+    price = to_cents(variant.get("price"))
+    if price is None:
+        return {}
+    was = to_cents(variant.get("compare_at_price"))
+    return {
+        "price_cents": price,
+        # A compare-at equal to (or below) the price is Shopify's way of
+        # saying "not on sale", not a 0% discount.
+        "list_price_cents": was if was is not None and was > price else None,
+        "currency": currency,
+    }
 
 
 def _to_storefront_js_url(url: str) -> str:
@@ -206,6 +237,7 @@ class ShopifyChecker:
             if self._collection_error:
                 note += f"; collection fetch failed: {self._collection_error}"
 
+        currency = _CURRENCIES.get(self.retailer)
         variants = record.get("variants")
         if not isinstance(variants, list):
             return CheckResult(Status.ERROR, now, "no variants[] in response")
@@ -226,8 +258,17 @@ class ShopifyChecker:
                 Status.IN_STOCK if matches[0].get("available") else Status.OOS,
                 now,
                 note,
+                **_variant_price(matches[0], currency),
             )
 
-        if any(v.get("available") for v in variants):
-            return CheckResult(Status.IN_STOCK, now, note)
-        return CheckResult(Status.OOS, now, note)
+        in_stock = [v for v in variants if v.get("available")]
+        if in_stock:
+            return CheckResult(
+                Status.IN_STOCK, now, note, **_variant_price(in_stock[0], currency)
+            )
+        # Out of stock everywhere: price the first variant anyway. A product
+        # can be discounted and sold out at once, and the price is still the
+        # last thing the retailer advertised.
+        return CheckResult(
+            Status.OOS, now, note, **_variant_price(variants[0], currency)
+        )

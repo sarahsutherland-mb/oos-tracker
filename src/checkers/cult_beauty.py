@@ -85,7 +85,12 @@ class CultBeautyChecker:
                     f"JSON-LD/data-stock disagree: availability={result.raw_availability} "
                     f"data-stock={ds!r} sku={result.sku}",
                 )
-        return CheckResult(result.status, now)
+        return CheckResult(
+            result.status,
+            now,
+            price_cents=result.price_cents,
+            currency=result.currency,
+        )
 
 
 def _find_data_stock(html: str, sku: str | None) -> str | None:

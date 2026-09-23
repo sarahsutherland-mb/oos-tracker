@@ -133,3 +133,33 @@ def test_a_few_failures_are_still_listed_individually():
     )
     assert "checks failing across the retailer" not in msg
     assert "P1 · Nordstrom" in msg
+
+
+# ---------- discounts in the alert ----------
+
+
+def _discount(**over):
+    from src.pricing import Discount
+    base = dict(product_name="Thigh Rescue", retailer="Gee Beauty",
+                price_cents=1500, currency="CAD", was_cents=2000, kind="on_sale")
+    return Discount(**{**base, **over})
+
+
+def test_a_discount_alone_is_worth_a_message():
+    """Nothing went OOS, but a price moved -- still news."""
+    msg = notify.format_message([], discounts=[_discount()])
+    assert msg is not None
+    assert "1 discounted" in msg
+    assert "CAD 15.00" in msg and "25% off" in msg
+
+
+def test_nothing_at_all_still_sends_nothing():
+    assert notify.format_message([], discounts=[]) is None
+
+
+def test_an_advertised_sale_and_an_observed_drop_are_worded_differently():
+    """'was' is the retailer's claim; 'down from' is only our own record."""
+    advertised = notify.format_message([], discounts=[_discount()])
+    observed = notify.format_message([], discounts=[_discount(kind="price_drop")])
+    assert "was CAD 20.00" in advertised
+    assert "down from CAD 20.00" in observed

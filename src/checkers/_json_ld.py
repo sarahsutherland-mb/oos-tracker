@@ -18,6 +18,7 @@ import re
 from dataclasses import dataclass
 
 from .base import Status
+from ..pricing import to_cents
 
 _LDJSON_RE = re.compile(
     r'<script[^>]*application/ld\+json[^>]*>(.*?)</script>',
@@ -52,6 +53,11 @@ class JsonLdResult:
     sku: str | None
     raw_availability: str | None
     error: str | None
+    # Read from the same `offers` dict as `status`, so price and availability
+    # can never end up describing different variants of a multi-size PDP.
+    # None on any failure path, and whenever the offer omits a price.
+    price_cents: int | None = None
+    currency: str | None = None
 
 
 def find_product_node(html: str) -> dict | None:
@@ -104,7 +110,11 @@ def parse_availability(
             if not isinstance(v, dict):
                 continue
             if str(v.get("sku")) == vm:
-                return _wrap(_offer_availability(v.get("offers")), str(v.get("sku")))
+                return _wrap(
+                    _offer_availability(v.get("offers")),
+                    str(v.get("sku")),
+                    v.get("offers"),
+                )
         seen = ", ".join(
             str(v.get("sku"))
             for v in node.get("hasVariant", []) or []
@@ -126,26 +136,48 @@ def parse_availability(
             None,
             f"variant_match {vm!r} doesn't match Product sku {sku!r}",
         )
-    return _wrap(_offer_availability(node.get("offers")), sku)
+    return _wrap(_offer_availability(node.get("offers")), sku, node.get("offers"))
+
+
+def _as_offer(offers: object) -> dict | None:
+    """The offer dict, taking the first when a page lists several."""
+    if isinstance(offers, list):
+        offers = offers[0] if offers else None
+    return offers if isinstance(offers, dict) else None
 
 
 def _offer_availability(offers: object) -> str | None:
     """Pull `availability` out of an offers dict (or first item if a list)."""
-    if isinstance(offers, list):
-        offers = offers[0] if offers else None
-    if not isinstance(offers, dict):
-        return None
-    return offers.get("availability")
+    offer = _as_offer(offers)
+    return offer.get("availability") if offer else None
 
 
-def _wrap(avail: str | None, sku: str | None) -> JsonLdResult:
+def _offer_price(offers: object) -> tuple[int | None, str | None]:
+    """`(minor units, currency)` from an offer. Both None unless both parse.
+
+    A price without a currency is dropped rather than stored: these
+    retailers quote EUR, CAD and USD, so an unlabelled number invites a
+    comparison that shouldn't be made.
+    """
+    offer = _as_offer(offers)
+    if offer is None:
+        return None, None
+    cents = to_cents(offer.get("price"))
+    currency = offer.get("priceCurrency")
+    if cents is None or not isinstance(currency, str) or not currency.strip():
+        return None, None
+    return cents, currency.strip().upper()
+
+
+def _wrap(avail: str | None, sku: str | None, offers: object = None) -> JsonLdResult:
+    cents, currency = _offer_price(offers)
     if avail is None:
         # JSON-LD present but no availability field — shouldn't happen on
         # well-formed PDPs, but tolerate it as UNKNOWN rather than ERROR.
-        return JsonLdResult(Status.UNKNOWN, sku, None, None)
+        return JsonLdResult(Status.UNKNOWN, sku, None, None, cents, currency)
     status = AVAILABILITY_TO_STATUS.get(avail)
     if status is None:
         # Recognized JSON-LD but unrecognized availability value (e.g. a new
         # schema.org variant like Discontinued / PreOrder / BackOrder).
-        return JsonLdResult(Status.UNKNOWN, sku, avail, None)
-    return JsonLdResult(status, sku, avail, None)
+        return JsonLdResult(Status.UNKNOWN, sku, avail, None, cents, currency)
+    return JsonLdResult(status, sku, avail, None, cents, currency)

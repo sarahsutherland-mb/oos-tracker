@@ -43,6 +43,14 @@ CREATE TABLE IF NOT EXISTS checks (
     status TEXT NOT NULL,
     checked_at TIMESTAMP NOT NULL,
     notes TEXT,
+    -- Integer minor units (cents/pence), NULL when not observed. Kept on the
+    -- check rather than the product because the history is the point: a
+    -- discount is a price that moved, which needs the previous run to compare
+    -- against. `currency` is per-row because these retailers quote CAD, EUR
+    -- and USD and the numbers are not comparable across them.
+    price_cents INTEGER,
+    list_price_cents INTEGER,
+    currency TEXT,
     FOREIGN KEY (product_id) REFERENCES products(id)
 );
 
@@ -93,6 +101,19 @@ def init_schema(conn: sqlite3.Connection) -> None:
     cols = {row[1] for row in conn.execute("PRAGMA table_info(products)")}
     if "variant_match" not in cols:
         conn.execute("ALTER TABLE products ADD COLUMN variant_match TEXT")
+
+    # Price columns landed after ~4.5k checks had already been recorded. They
+    # stay NULL on every historical row, which is correct -- those runs did
+    # not observe a price -- so the first discount comparison can only happen
+    # once a product has two priced checks behind it.
+    check_cols = {row[1] for row in conn.execute("PRAGMA table_info(checks)")}
+    for col, decl in (
+        ("price_cents", "INTEGER"),
+        ("list_price_cents", "INTEGER"),
+        ("currency", "TEXT"),
+    ):
+        if col not in check_cols:
+            conn.execute(f"ALTER TABLE checks ADD COLUMN {col} {decl}")
 
 
 def _source_for(retailer: str) -> str:
@@ -242,11 +263,24 @@ def record_check(
     status: str,
     checked_at: str,
     notes: str | None = None,
+    price_cents: int | None = None,
+    list_price_cents: int | None = None,
+    currency: str | None = None,
 ) -> None:
     conn.execute(
-        "INSERT INTO checks (product_id, status, checked_at, notes) "
-        "VALUES (?, ?, ?, ?)",
-        (product_id, status, checked_at, notes),
+        "INSERT INTO checks "
+        "(product_id, status, checked_at, notes, "
+        " price_cents, list_price_cents, currency) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (
+            product_id,
+            status,
+            checked_at,
+            notes,
+            price_cents,
+            list_price_cents,
+            currency,
+        ),
     )
 
 

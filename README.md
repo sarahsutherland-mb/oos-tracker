@@ -85,6 +85,25 @@ redirected) or `UNKNOWN` (loaded, but the signal was unclear).
 | Boots | 5 | Not checked — reports `UNKNOWN` (see below) |
 | Target / Walmart / ASOS / CVS | 59 | Your Google Sheet |
 
+### Discounts
+
+Two separate signals, both on the dashboard under **Discounted now**:
+
+- **Retailer marked down** — the retailer publishes a "was" price above the
+  current one (Shopify's `compare_at_price` and equivalents). Unambiguous, but
+  only some retailers publish it.
+- **Cheaper than last run** — this run's price is below the last one recorded.
+  Catches a retailer discounting quietly without flagging a sale, which is the
+  one worth watching for MAP.
+
+Prices are never compared across retailers: Gee Beauty quotes CAD, Cult Beauty
+EUR, Anthropologie and Goop USD. A product that changes currency is treated as
+having no comparable previous price rather than as a huge markdown.
+
+The second signal needs two priced runs behind a product, so it starts working
+from the second weekly run after 2026-09-23 — before that there is nothing to
+compare against and the section will only show retailer-advertised sales.
+
 After the per-product checks, a **brand-page reconciliation** pass runs. It
 rescrapes each retailer's brand page and does two things: relabels this run's
 `ERROR` rows as `OOS` where the brand page explains the failure (a delisted PDP
@@ -132,6 +151,9 @@ PerimeterX edge throws at the first request of a session. Both are tested.
   Target is the most tractable — its brand page renders fine, but the tiles are
   client-side and the OOS signal is per-tile ("Check stores"), not absence.
 - **Boots is unchecked** (5 SKUs), pending a decision on Incapsula bypass.
-- **No price or discount tracking yet.**
+- **Discount tracking covers 61 of 160 SKUs** — Gee Beauty (CAD), Cult Beauty
+  (EUR), Anthropologie (USD) and Goop (USD), the retailers whose pages publish
+  a price. The manual sheet has no price column and the blocked retailers have
+  no readable page, so the rest stay unpriced.
 - **`data.db` is committed to the repo.** That's how run history survives; it
   also means the weekly job pushes to `main`. Don't rebase away its commits.

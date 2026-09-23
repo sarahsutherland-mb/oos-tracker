@@ -15,6 +15,7 @@ from pathlib import Path
 from jinja2 import Environment
 
 from .db import connect, po_lines_for_dashboard, unconfirmed_new_products
+from .pricing import current_discounts, format_price
 
 OUT_PATH = Path("docs/index.html")
 STALE_DAYS = 10
@@ -347,6 +348,31 @@ _TEMPLATE = """<!doctype html>
 </section><!-- /content-changes -->
 
 <section class="view-content" id="content-new-products">
+
+<h2>Discounted now</h2>
+<div class="muted" style="margin: -4px 0 12px;">
+  Marked down by the retailer, or cheaper than the last run. Only retailers
+  whose pages publish a price &mdash; the manual sheet has no price column.
+</div>
+{% if discounts %}
+<div class="card">
+<table>
+  <tr><th>Product</th><th>Retailer</th><th>Now</th><th>Was</th><th>Off</th><th>Signal</th></tr>
+  {% for d in discounts %}
+  <tr>
+    <td>{{ d.name }}</td>
+    <td>{{ d.retailer }}</td>
+    <td><strong>{{ d.price }}</strong></td>
+    <td class="subtle">{{ d.was }}</td>
+    <td>{{ d.percent_off }}%</td>
+    <td class="subtle">{{ d.basis }}</td>
+  </tr>
+  {% endfor %}
+</table>
+</div>
+{% else %}
+<div class="card"><div class="empty">Nothing discounted right now.</div></div>
+{% endif %}
 
 <h2>New products detected</h2>
 <div class="muted" style="margin: -4px 0 12px;">Products on a retailer's brand page not yet in <code>products.csv</code>.</div>
@@ -708,6 +734,24 @@ def _gather(conn: sqlite3.Connection) -> dict:
     if row and row["m"]:
         last_run_dt = _parse_dt(row["m"])
 
+    discounts = [
+        {
+            "name": d.product_name,
+            "retailer": d.retailer,
+            "price": format_price(d.price_cents, d.currency),
+            "was": format_price(d.was_cents, d.currency),
+            "percent_off": d.percent_off,
+            # Worth distinguishing on the page, not just in Slack: one is the
+            # retailer's own claim, the other is only our previous reading.
+            "basis": (
+                "retailer marked down"
+                if d.is_retailer_advertised
+                else "cheaper than last run"
+            ),
+        }
+        for d in current_discounts(conn)
+    ]
+
     new_products_rows = unconfirmed_new_products(conn)
     new_products = [
         {
@@ -918,6 +962,7 @@ def _gather(conn: sqlite3.Connection) -> dict:
         "retailer_summary": retailer_summary,
         "by_retailer": by_retailer,
         "new_products": new_products,
+        "discounts": discounts,
         "history_matrix": history_matrix,
         "po_orders": po_orders,
         "po_ordered_while_oos": po_ordered_while_oos,
