@@ -1,6 +1,6 @@
 # Megababe OOS Tracker
 
-Weekly out-of-stock check for 160 Megababe SKUs across 10 retailers. It runs
+Weekly out-of-stock check for 161 Megababe SKUs across 10 retailers. It runs
 itself every Monday, writes what it found to `data.db`, regenerates a static
 dashboard at `docs/index.html`, and posts a Slack message when something moved.
 
@@ -16,24 +16,36 @@ a dated dev journal — both are history, not instructions.
 
 ## The one thing you have to do
 
-**Keep the Google Sheet current.** Four retailers (Target, Walmart, ASOS, CVS
-— 59 SKUs) block automated checking hard enough that a person has to look.
-You check them by hand and log what you see; the tracker reads your sheet.
+**Keep the Google Sheet current.** Six retailers (Target, Walmart, ASOS, CVS,
+Nordstrom, Anthropologie — 111 SKUs) block automated checking hard enough that
+a person has to look. You check them by hand and log what you see; the tracker
+reads your sheet. Update it before Monday's run.
 
-The sheet is the "Manual Status" tab of the **2026 Retail OOS** workbook,
-published to the web as CSV. Columns:
+The sheet is the **2026 Retail OOS** workbook, published to the web as CSV.
+The tracker reads three columns and ignores the rest:
 
-| retailer | product_name | status | last_checked | notes |
-|---|---|---|---|---|
-| Target | Thigh Rescue Mini | in_stock | 2026-09-22 | |
-| Walmart | Bust Dust | oos | 2026-09-22 | back-order til Oct |
+| Retailer | Product Name | Stock status |
+|---|---|---|
+| Target | Thigh Rescue Mini | In Stock |
+| Walmart | Bust Dust | Out of Stock |
 
-- `product_name` must match `products.csv` **exactly** (case sensitive).
-- `status` is `in_stock`, `oos`, `error`, or blank (blank = unknown).
-- `last_checked` is what the dashboard shows, so backdate honestly.
+- `Product Name` must match `products.csv` **exactly** — case and accents
+  (Nordstrom's is "Apres Shave", Walmart's "Après Shave"). Mismatches are
+  printed at the top of the run log under "Manual sheet reconciliation" and
+  that product reports `UNKNOWN`.
+- `Stock status` is `In Stock`, `Out of Stock`, or blank (= unknown). Any other
+  text becomes `ERROR` with what you typed kept in the notes.
+- Rows for other retailers (Cult Beauty, Gee Beauty, …) are ignored.
 
-The dashboard's **Stale manual entries** section lists rows older than 10 days.
-That list is your to-do.
+The sheet has no "last checked" date, so the tracker can't tell a row you
+re-checked this week from one untouched since summer — whatever is in the
+sheet on Monday is recorded as that week's status. For the same reason the
+dashboard's **Stale manual entries** section won't catch a sheet you forgot to
+update.
+
+Anthropologie is quick to check despite its 25 rows: it removes out-of-stock
+products from its brand page entirely, so anything missing from
+[the brand page](https://www.anthropologie.com/brands/megababe) is OOS.
 
 If the sheet is unreachable on a run, the tracker falls back to each product's
 last known status rather than failing — so a broken sheet URL degrades quietly.
@@ -52,7 +64,7 @@ uv run python -m src.build_dashboard      # regenerate docs/index.html
 uv run pytest tests/ -q                   # tests (no network)
 ```
 
-A full run takes a few minutes — most of it Playwright on Goop and Nordstrom.
+A full run takes a few minutes — most of it Playwright on Goop.
 
 `.env` (copy `.env.example`):
 
@@ -77,13 +89,11 @@ redirected) or `UNKNOWN` (loaded, but the signal was unclear).
 
 | Retailer | SKUs | How |
 |---|---|---|
-| Anthropologie | 25 | Brand page only. A product missing from it **is** the OOS signal |
-| Nordstrom | 25 | Playwright + JSON-LD — **currently blocked, see below** |
-| Cult Beauty | 23 | httpx + JSON-LD |
+| Cult Beauty | 22 | httpx + JSON-LD |
 | Gee Beauty | 21 | One Shopify collection request |
 | Goop | 2 | Playwright + JSON-LD |
 | Boots | 5 | Not checked — reports `UNKNOWN` (see below) |
-| Target / Walmart / ASOS / CVS | 59 | Your Google Sheet |
+| Target / Walmart / ASOS / CVS / Nordstrom / Anthropologie | 111 | Your Google Sheet |
 
 ### Discounts
 
@@ -97,7 +107,7 @@ Two separate signals, both on the dashboard under **Discounted now**:
   one worth watching for MAP.
 
 Prices are never compared across retailers: Gee Beauty quotes CAD, Cult Beauty
-EUR, Anthropologie and Goop USD. A product that changes currency is treated as
+EUR, Goop USD. A product that changes currency is treated as
 having no comparable previous price rather than as a huge markdown.
 
 The second signal needs two priced runs behind a product, so it starts working
@@ -119,41 +129,40 @@ has a line per product with the raw signal the checker saw.
 
 | Symptom | What it usually is |
 |---|---|
-| All 25 Anthropologie SKUs missing from a run | Brand-page fetch was blocked. The run *skips* rather than marking them OOS — deliberate. One-off is fine; twice running needs a look |
-| **All 25 Nordstrom SKUs ERROR** | Current known state as of 2026-09-23 — Nordstrom now redirects every PDP to its bot-detection page. Not a code bug and not fixable by slowing down; see Known gaps |
-| 1–4 Nordstrom ERRORs in a run | The older, milder version of the same thing. Fine to ignore |
+| A manual product shows `UNKNOWN` | Its name in the sheet doesn't match `products.csv`. The top of the run log lists both sides of the mismatch |
+| Goop shows `ERROR` | Cloudflare's bot check caught it that week. Usually clears on the next run |
 | Gee Beauty slow or 429 | Rate limit. The checker already throttles and backs off; it resolves itself |
 | Boots always `UNKNOWN` | Correct. Boots PDPs are Incapsula-blocked and nobody has decided on a bypass. `UNKNOWN` is honest — it used to report `IN_STOCK`, which quietly laundered five unchecked SKUs into confirmed stock |
 | A product shows OOS but the site says otherwise | Check `url_quality` in `products.csv`. Anything other than `pdp` never gets checked properly and is surfaced on the dashboard under **URLs to fix** |
 | Everything at one retailer flips OOS at once | Suspect the scraper, not the retailer. The dashboard's reconciled-OOS marker tells you whether it came from the brand page |
 
-**The failure mode to watch for** is silence, not noise. Anthropologie is the
-only retailer where the brand page is the *sole* signal — no PDP fallback, no
-sheet row. If its fetch fails, those 25 SKUs simply don't appear in the run.
-There's a guard (`_MIN_AUTHORITATIVE_TILES`) that stops a thin scrape from
-marking them all OOS, and a retry that handles the cold-start 403 the
-PerimeterX edge throws at the first request of a session. Both are tested.
+**The failure mode to watch for** is silence, not noise. Most of the tracker
+is now your sheet, and a sheet nobody updated looks exactly like a week where
+nothing changed.
 
 ---
 
 ## Known gaps
 
-- **Nordstrom is blocked (25 SKUs).** Re-probed 2026-09-23: 18/18 PDPs
-  redirected to `siteclosed.nordstrom.com/invitation.html`. The redirect is
-  client-side and fires *after* the page loads, so a request looks fine until
-  it doesn't. Tested and ruled out: request throttling (5s gaps), a fresh
-  browser context per product, and the pinned Chrome/124 user agent. This is
-  the same "needs a real decision" tier as Anthropologie was in April —
-  stealth tooling or a paid unblocker — not a quick fix. Until then these 25
-  SKUs report ERROR and are honestly marked as such.
+- **Nordstrom moved to the sheet on 2026-10-07 (27 SKUs).** It checked
+  cleanly through 2026-07-23; by 2026-09-23 every PDP redirected to
+  `siteclosed.nordstrom.com/invitation.html`. The redirect is client-side and
+  fires *after* the page loads. Tested and ruled out: throttling (5s gaps), a
+  fresh browser context per product, and the pinned Chrome/124 user agent.
+  Automating it again needs stealth tooling or a paid unblocker.
+  `checkers/nordstrom.py` and `brand_pages.scrape_nordstrom` are kept.
+- **Anthropologie moved to the sheet on 2026-10-07 (25 SKUs).** Its brand page
+  fetches fine from a laptop but 403s from GitHub's runners on every retry, so
+  the weekly job never recorded it. Re-enabling it means running at least that
+  part of the check from somewhere that isn't a GitHub runner — see
+  `brand_pages.BRAND_PAGE_AUTHORITATIVE`.
 - **No automated checking for Target, Walmart, ASOS, CVS.** Re-probed
-  2026-09-23: ASOS still times out, Anthropologie's technique doesn't transfer.
+  2026-09-23: ASOS still times out.
   Target is the most tractable — its brand page renders fine, but the tiles are
   client-side and the OOS signal is per-tile ("Check stores"), not absence.
 - **Boots is unchecked** (5 SKUs), pending a decision on Incapsula bypass.
-- **Discount tracking covers 61 of 160 SKUs** — Gee Beauty (CAD), Cult Beauty
-  (EUR), Anthropologie (USD) and Goop (USD), the retailers whose pages publish
-  a price. The manual sheet has no price column and the blocked retailers have
+- **Discount tracking covers 45 of 161 SKUs** — Gee Beauty (CAD), Cult Beauty
+  (EUR) and Goop (USD), the retailers whose pages publish a price. The manual sheet has no price column and the blocked retailers have
   no readable page, so the rest stay unpriced.
 - **`data.db` is committed to the repo.** That's how run history survives; it
   also means the weekly job pushes to `main`. Don't rebase away its commits.

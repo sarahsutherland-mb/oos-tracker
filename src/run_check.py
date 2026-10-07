@@ -8,15 +8,10 @@ Routing:
                             url_quality is irrelevant here, the sheet is the
                             source of truth regardless of what the URL points to
 - url_quality != 'pdp'   -> ERROR row "needs fixing" (no checker call)
-- Anthropologie          -> no per-product call at all; status comes from the
-                            brand page in the reconciliation pass, since
-                            Anthropologie delists OOS PDPs (see
-                            brand_pages.BRAND_PAGE_AUTHORITATIVE)
 - Gee Beauty             -> ShopifyChecker (one collection request for all
                             SKUs, falling back to per-product .js)
 - Cult Beauty            -> CultBeautyChecker (httpx + JSON-LD)
 - Goop                   -> GoopChecker (Playwright + JSON-LD; CF-protected)
-- Nordstrom              -> NordstromChecker (Playwright + JSON-LD AggregateOffer)
 - Boots                  -> BootsChecker (stub: UNKNOWN; deferred per Incapsula)
 - Other Playwright retailers -> skipped until checker exists (no row written)
 """
@@ -38,7 +33,6 @@ from .checkers.boots import BootsChecker
 from .checkers.cult_beauty import CultBeautyChecker
 from .checkers.goop import GoopChecker
 from .checkers.manual_sheet import ManualSheet, ManualSheetChecker
-from .checkers.nordstrom import NordstromChecker
 from .checkers.shopify import ShopifyChecker
 from .db import (
     all_products,
@@ -56,18 +50,17 @@ SHOPIFY_RETAILERS = ("Gee Beauty",)
 SHOPIFY_COLLECTION_URLS = {
     "Gee Beauty": "https://geebeauty.ca/collections/megababe/products.json?limit=250",
 }
-MANUAL_RETAILERS = ("Target", "Walmart", "ASOS", "CVS")
-# Anthropologie was manual until 2026-08-05. It now derives status entirely
-# from its brand page (it delists OOS PDPs, so listed/absent is the whole
-# signal) — see brand_pages.BRAND_PAGE_AUTHORITATIVE. Its products are
-# skipped in the per-product loop below and written by the reconcile pass,
-# so it needs no sheet column and no per-PDP checker.
+MANUAL_RETAILERS = ("Target", "Walmart", "ASOS", "CVS", "Nordstrom", "Anthropologie")
+# Both moved to the sheet on 2026-10-07. Nordstrom started redirecting every
+# PDP to its bot-detection page sometime between 2026-07-23 and 2026-09-23.
+# Anthropologie's brand page (automated 2026-08-05) works from a laptop but
+# 403s from GitHub's runners on every retry, so the weekly job never once
+# recorded it. The checkers and scrapers are kept for if either reopens.
 # Retailers served by their own bespoke httpx checker (one class per
 # retailer; not Shopify, not the manual sheet). Recon showed these are
 # server-rendered with usable structured data.
 HTTPX_RETAILERS = ("Cult Beauty",)
 PLAYWRIGHT_RETAILERS = (
-    "Nordstrom",
     "Boots",
     "Goop",
 )
@@ -139,7 +132,7 @@ def run() -> int:
         # browser, and shares the browser across every Playwright-backed
         # checker. Launched only if at least one product needs it.
         needs_pw = any(
-            p.retailer in PLAYWRIGHT_RETAILERS and p.retailer in ("Goop", "Nordstrom")
+            p.retailer in PLAYWRIGHT_RETAILERS and p.retailer == "Goop"
             for p in products
         )
         pw_runtime = None
@@ -149,7 +142,6 @@ def run() -> int:
             pw_browser = pw_runtime.chromium.launch(headless=True)
         playwright_checkers = {
             "Goop": GoopChecker(browser=pw_browser),
-            "Nordstrom": NordstromChecker(browser=pw_browser),
             "Boots": BootsChecker(),  # stub — no browser needed
         }
 

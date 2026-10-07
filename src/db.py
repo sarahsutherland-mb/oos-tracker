@@ -17,13 +17,15 @@ DEFAULT_PRODUCTS_CSV = Path("products.csv")
 # `checkers.manual_sheet.TRACKED_RETAILERS`. Defined here rather than imported
 # because db.py is the lowest layer — brand_pages and the checkers import it,
 # so it can't import them back.
-MANUAL_RETAILERS = {"Target", "Walmart", "ASOS", "CVS"}
+MANUAL_RETAILERS = {"Target", "Walmart", "ASOS", "CVS", "Nordstrom", "Anthropologie"}
 
 # Retailers whose status comes wholesale from their brand page rather than a
 # per-product check or the sheet (see brand_pages.BRAND_PAGE_AUTHORITATIVE).
 # Given their own source value so the dashboard doesn't tag them "manual" and
 # the stale-sheet nag doesn't chase rows nobody maintains by hand any more.
-BRAND_PAGE_RETAILERS = {"Anthropologie"}
+# Empty since 2026-10-07: Anthropologie's brand page 403s from GitHub's
+# runners (fine from a laptop), so it went back to the sheet.
+BRAND_PAGE_RETAILERS: set[str] = set()
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS products (

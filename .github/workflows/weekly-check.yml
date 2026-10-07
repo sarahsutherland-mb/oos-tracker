@@ -20,16 +20,20 @@ permissions:
 
 jobs:
   check:
-    runs-on: ubuntu-latest
+    # Pinned rather than ubuntu-latest, which moves to Ubuntu 26 from
+    # 2026-10-19. Playwright's `--with-deps` lists system packages per
+    # distro, so a new image is the likeliest thing to break this job;
+    # bump deliberately, with a workflow_dispatch run to confirm.
+    runs-on: ubuntu-24.04
     # Scraping ten retailers, a few with a real browser. The default 360min
     # would let a hung fetch burn the day; 45 is well clear of a normal run.
     timeout-minutes: 45
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v10
         with:
           enable-cache: true
 
@@ -82,7 +86,7 @@ jobs:
         # `always()`, because the run that fails is the one whose log is
         # worth reading.
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: run-log
           path: run.log

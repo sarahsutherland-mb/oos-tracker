@@ -94,7 +94,10 @@ SKIP_RETAILERS = {"Boots", "Target", "Walmart", "CVS"}
 #
 # ASOS's notes say absence is authoritative there too, but its brand page
 # is still Akamai-blocked (403/timeout as of 2026-08-05) so it stays manual.
-BRAND_PAGE_AUTHORITATIVE = {"Anthropologie"}
+# Empty since 2026-10-07: Anthropologie's brand page 403s from GitHub's
+# runners, so it went back to the manual sheet. Re-add it here (and to
+# HTTPX_SCRAPERS) if the job ever runs from somewhere it isn't blocked.
+BRAND_PAGE_AUTHORITATIVE: set[str] = set()
 
 # Guard against writing a wholesale "everything is OOS" run off a scrape
 # that technically succeeded but came back suspiciously thin (edge served a
@@ -693,12 +696,11 @@ HTTPX_SCRAPERS: dict[str, Callable[[httpx.Client], ScrapeResult]] = {
     "Cult Beauty":   scrape_cult_beauty,
     "Gee Beauty":    scrape_gee_beauty,
     "ASOS":          scrape_asos,
-    # httpx, not Playwright — Playwright is the route that 403s here.
-    # See scrape_anthropologie's docstring.
-    "Anthropologie": scrape_anthropologie,
+    # Anthropologie and Nordstrom (below) are manual since 2026-10-07 and
+    # their brand pages are blocked from GitHub's runners, so they aren't
+    # scraped. scrape_anthropologie / scrape_nordstrom are kept for re-use.
 }
 PLAYWRIGHT_SCRAPERS: dict[str, Callable[[object], ScrapeResult]] = {
-    "Nordstrom":     scrape_nordstrom,
     # Goop deliberately omitted: its tile DOM puts product titles outside
     # the anchor element my generic extractor handles (recon found only
     # "quickshop" text). Goop carries 2 known SKUs and rarely changes;
