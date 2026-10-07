@@ -87,3 +87,10 @@ def test_failed_or_empty_response_is_error_not_oos(api_status, summaries):
     ck, _ = checker_serving(api_status, summaries)
     for tcin in ("111", "222"):
         assert ck.check(product(tcin)).status is Status.ERROR
+
+
+def test_checker_can_be_closed():
+    """run_check closes every httpx checker in its `finally`; a missing
+    close() crashed the 2026-10-07 run after all the checks had finished."""
+    ck, _ = checker_serving(200, [])
+    ck.close()

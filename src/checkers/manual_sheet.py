@@ -14,9 +14,8 @@ from .base import CheckResult, Product, Status
 # Anthropologie + CVS were added 2026-04-30 — both are anti-bot-locked at a
 # tier default Playwright can't crack (PerimeterX and Akamai 403 respectively),
 # and the manual-sheet route is cheaper than the bypass tooling we'd need.
-TRACKED_RETAILERS = ("Walmart", "ASOS", "CVS", "Nordstrom", "Anthropologie")
-# 2026-10-07: Nordstrom and Anthropologie joined (see run_check.MANUAL_RETAILERS);
-# Target left, now automated via checkers/target.py. Its sheet rows are ignored.
+TRACKED_RETAILERS = ("Target", "Walmart", "ASOS", "CVS", "Nordstrom", "Anthropologie")
+# Nordstrom and Anthropologie joined on 2026-10-07 (see run_check.MANUAL_RETAILERS).
 # Anthropologie left this list on 2026-08-05 — it's now derived from its brand
 # page (see brand_pages.BRAND_PAGE_AUTHORITATIVE). Dropping it here means any
 # leftover Anthropologie rows in the sheet are ignored rather than reported as

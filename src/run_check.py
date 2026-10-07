@@ -11,7 +11,6 @@ Routing:
 - Gee Beauty             -> ShopifyChecker (one collection request for all
                             SKUs, falling back to per-product .js)
 - Cult Beauty            -> CultBeautyChecker (httpx + JSON-LD)
-- Target                 -> TargetChecker (one redsky API request for all SKUs)
 - Goop                   -> GoopChecker (Playwright + JSON-LD; CF-protected)
 - Boots                  -> BootsChecker (stub: UNKNOWN; deferred per Incapsula)
 - Other Playwright retailers -> skipped until checker exists (no row written)
@@ -35,7 +34,6 @@ from .checkers.cult_beauty import CultBeautyChecker
 from .checkers.goop import GoopChecker
 from .checkers.manual_sheet import ManualSheet, ManualSheetChecker
 from .checkers.shopify import ShopifyChecker
-from .checkers.target import TargetChecker
 from .db import (
     all_products,
     connect,
@@ -52,7 +50,7 @@ SHOPIFY_RETAILERS = ("Gee Beauty",)
 SHOPIFY_COLLECTION_URLS = {
     "Gee Beauty": "https://geebeauty.ca/collections/megababe/products.json?limit=250",
 }
-MANUAL_RETAILERS = ("Walmart", "ASOS", "CVS", "Nordstrom", "Anthropologie")
+MANUAL_RETAILERS = ("Target", "Walmart", "ASOS", "CVS", "Nordstrom", "Anthropologie")
 # Both moved to the sheet on 2026-10-07. Nordstrom started redirecting every
 # PDP to its bot-detection page sometime between 2026-07-23 and 2026-09-23.
 # Anthropologie's brand page (automated 2026-08-05) works from a laptop but
@@ -61,9 +59,10 @@ MANUAL_RETAILERS = ("Walmart", "ASOS", "CVS", "Nordstrom", "Anthropologie")
 # Retailers served by their own bespoke httpx checker (one class per
 # retailer; not Shopify, not the manual sheet). Recon showed these are
 # server-rendered with usable structured data.
-HTTPX_RETAILERS = ("Cult Beauty", "Target")
-# Target left the sheet on 2026-10-07: its frontend's own stock API answers
-# plain httpx, one request for every SKU (see checkers/target.py).
+HTTPX_RETAILERS = ("Cult Beauty",)
+# Target is on the sheet. checkers/target.py reads its stock API and works
+# from a laptop, but the API returns HTTP 435 (PerimeterX) to GitHub's
+# runners, so it isn't wired in (2026-10-07).
 PLAYWRIGHT_RETAILERS = (
     "Boots",
     "Goop",
@@ -129,10 +128,7 @@ def run() -> int:
             r: ShopifyChecker(r, collection_url=SHOPIFY_COLLECTION_URLS.get(r))
             for r in SHOPIFY_RETAILERS
         }
-        httpx_checkers = {
-            "Cult Beauty": CultBeautyChecker(),
-            "Target": TargetChecker([p for p in products if p.retailer == "Target"]),
-        }
+        httpx_checkers = {"Cult Beauty": CultBeautyChecker()}
 
         # Playwright sync API forbids two `sync_playwright()` runtimes in
         # the same thread. So the orchestrator owns one runtime + one

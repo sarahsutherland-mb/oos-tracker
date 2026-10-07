@@ -16,8 +16,8 @@ a dated dev journal — both are history, not instructions.
 
 ## The one thing you have to do
 
-**Keep the Google Sheet current.** Five retailers (Walmart, ASOS, CVS,
-Nordstrom, Anthropologie — 86 SKUs) block automated checking hard enough that
+**Keep the Google Sheet current.** Six retailers (Target, Walmart, ASOS, CVS,
+Nordstrom, Anthropologie — 111 SKUs) block automated checking hard enough that
 a person has to look. You check them by hand and log what you see; the tracker
 reads your sheet. Update it before Monday's run.
 
@@ -35,7 +35,7 @@ The tracker reads three columns and ignores the rest:
   that product reports `UNKNOWN`.
 - `Stock status` is `In Stock`, `Out of Stock`, or blank (= unknown). Any other
   text becomes `ERROR` with what you typed kept in the notes.
-- Rows for other retailers (Target, Cult Beauty, Gee Beauty, …) are ignored.
+- Rows for other retailers (Cult Beauty, Gee Beauty, …) are ignored.
 
 The sheet has no "last checked" date, so the tracker can't tell a row you
 re-checked this week from one untouched since summer — whatever is in the
@@ -89,12 +89,11 @@ redirected) or `UNKNOWN` (loaded, but the signal was unclear).
 
 | Retailer | SKUs | How |
 |---|---|---|
-| Target | 25 | Target's own stock API, one request for all SKUs. Available online = in stock (store stock goes in the notes only). Missing from the response = delisted = OOS |
 | Cult Beauty | 22 | httpx + JSON-LD |
 | Gee Beauty | 21 | One Shopify collection request |
 | Goop | 2 | Playwright + JSON-LD |
 | Boots | 5 | Not checked — reports `UNKNOWN` (see below) |
-| Walmart / ASOS / CVS / Nordstrom / Anthropologie | 86 | Your Google Sheet |
+| Target / Walmart / ASOS / CVS / Nordstrom / Anthropologie | 111 | Your Google Sheet |
 
 ### Discounts
 
@@ -131,7 +130,6 @@ has a line per product with the raw signal the checker saw.
 | Symptom | What it usually is |
 |---|---|
 | A manual product shows `UNKNOWN` | Its name in the sheet doesn't match `products.csv`. The top of the run log lists both sides of the mismatch |
-| All 25 Target SKUs `ERROR`, note `redsky HTTP 435` | Target's bot protection (PerimeterX) refused the API call. Seen once on 2026-10-07 after a burst of test requests; cleared within 15 minutes. One week is fine; twice running means it's blocking GitHub and Target goes back on the sheet |
 | Goop shows `ERROR` | Cloudflare's bot check caught it that week. Usually clears on the next run |
 | Gee Beauty slow or 429 | Rate limit. The checker already throttles and backs off; it resolves itself |
 | Boots always `UNKNOWN` | Correct. Boots PDPs are Incapsula-blocked and nobody has decided on a bypass. `UNKNOWN` is honest — it used to report `IN_STOCK`, which quietly laundered five unchecked SKUs into confirmed stock |
@@ -159,9 +157,12 @@ nothing changed.
   part of the check from somewhere that isn't a GitHub runner — see
   `brand_pages.BRAND_PAGE_AUTHORITATIVE`.
 - **No automated checking for Walmart, ASOS, CVS.** Re-probed 2026-09-23:
-  ASOS still times out. Target was automated on 2026-10-07; its brand-listing
-  API (which would catch new products) is captcha-protected, so new Target
-  SKUs still need adding to `products.csv` by hand.
+  ASOS still times out.
+- **Target is on the sheet, with a working checker parked.**
+  `checkers/target.py` reads Target's own stock API (one request, all SKUs;
+  available online = in stock, per the user). It works from a laptop, but the
+  API returns HTTP 435 (PerimeterX) to GitHub's runners — confirmed on a real
+  run 2026-10-07 — so it isn't wired into the weekly job.
 - **Boots is unchecked** (5 SKUs), pending a decision on Incapsula bypass.
 - **Discount tracking covers 45 of 161 SKUs** — Gee Beauty (CAD), Cult Beauty
   (EUR) and Goop (USD), the retailers whose pages publish a price. The manual sheet has no price column and the blocked retailers have

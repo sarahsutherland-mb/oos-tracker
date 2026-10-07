@@ -7,6 +7,9 @@ import httpx
 
 from .base import CheckResult, Product, Status
 
+# NOT WIRED IN: redsky returns HTTP 435 (PerimeterX) to GitHub's runners, so
+# Target stays on the manual sheet. Kept because it works from a laptop.
+#
 # Target's own frontend reads stock from its "redsky" API, which answers
 # plain httpx (probed 2026-10-07: PDP 200, API 200, no challenge). One
 # `product_summary_with_fulfillment_v1` call takes every TCIN at once, so all
@@ -85,8 +88,13 @@ class TargetChecker:
         )
         self._tcins = [t for p in products if (t := tcin_from_url(p.url))]
         self._sample_url = products[0].url if products else None
+        self._owns_client = client is None
         self._summaries: dict[str, dict] | None = None
         self._error: str | None = None
+
+    def close(self) -> None:
+        if self._owns_client:
+            self._client.close()
 
     def _api_key(self) -> str:
         if self._sample_url:
