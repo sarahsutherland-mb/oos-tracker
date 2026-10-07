@@ -17,7 +17,7 @@ DEFAULT_PRODUCTS_CSV = Path("products.csv")
 # `checkers.manual_sheet.TRACKED_RETAILERS`. Defined here rather than imported
 # because db.py is the lowest layer — brand_pages and the checkers import it,
 # so it can't import them back.
-MANUAL_RETAILERS = {"Target", "Walmart", "ASOS", "CVS", "Nordstrom", "Anthropologie"}
+MANUAL_RETAILERS = {"Walmart", "ASOS", "CVS", "Nordstrom", "Anthropologie"}
 
 # Retailers whose status comes wholesale from their brand page rather than a
 # per-product check or the sheet (see brand_pages.BRAND_PAGE_AUTHORITATIVE).
