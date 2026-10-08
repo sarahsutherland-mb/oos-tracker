@@ -1,11 +1,13 @@
 name: Weekly stock check
 
-# 14:00 UTC is 9am Eastern in winter and 10am in summer -- GitHub cron has no
-# timezone, and an hour's drift doesn't matter for a weekly retail check.
+# Wednesdays (2026-10-08, was Mondays): the sheet is updated Mon-Tue, and the
+# results get Wed-Thu for review. 13:00 UTC is 9am Eastern in summer and 8am
+# in winter -- GitHub cron has no timezone, and it can start a few minutes
+# late under load.
 # `workflow_dispatch` is the one to use when testing changes; don't wait a week.
 on:
   schedule:
-    - cron: "0 14 * * 1"
+    - cron: "0 13 * * 3"
   workflow_dispatch:
 
 # The run commits data.db and docs/index.html back to main, so two overlapping

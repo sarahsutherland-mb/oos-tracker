@@ -12,7 +12,6 @@ Routing:
                             SKUs, falling back to per-product .js)
 - Cult Beauty            -> CultBeautyChecker (httpx + JSON-LD)
 - Goop                   -> GoopChecker (Playwright + JSON-LD; CF-protected)
-- Boots                  -> BootsChecker (stub: UNKNOWN; deferred per Incapsula)
 - Other Playwright retailers -> skipped until checker exists (no row written)
 """
 
@@ -29,7 +28,6 @@ from playwright.sync_api import sync_playwright
 from . import brand_pages
 from .notify import notify
 from .checkers.base import CheckResult, Product, Status
-from .checkers.boots import BootsChecker
 from .checkers.cult_beauty import CultBeautyChecker
 from .checkers.goop import GoopChecker
 from .checkers.manual_sheet import ManualSheet, ManualSheetChecker
@@ -50,7 +48,10 @@ SHOPIFY_RETAILERS = ("Gee Beauty",)
 SHOPIFY_COLLECTION_URLS = {
     "Gee Beauty": "https://geebeauty.ca/collections/megababe/products.json?limit=250",
 }
-MANUAL_RETAILERS = ("Target", "Walmart", "ASOS", "CVS", "Nordstrom", "Anthropologie")
+MANUAL_RETAILERS = ("Target", "Walmart", "ASOS", "CVS", "Nordstrom", "Anthropologie", "Boots")
+# Boots joined 2026-10-08: its PDPs are Incapsula-blocked and the brand page
+# shows no stock state, so for over five months it reported UNKNOWN. The
+# user wants it tracked; a person checking "Add to basket" is the only route.
 # Both moved to the sheet on 2026-10-07. Nordstrom started redirecting every
 # PDP to its bot-detection page sometime between 2026-07-23 and 2026-09-23.
 # Anthropologie's brand page (automated 2026-08-05) works from a laptop but
@@ -63,10 +64,7 @@ HTTPX_RETAILERS = ("Cult Beauty",)
 # Target is on the sheet. checkers/target.py reads its stock API and works
 # from a laptop, but the API returns HTTP 435 (PerimeterX) to GitHub's
 # runners, so it isn't wired in (2026-10-07).
-PLAYWRIGHT_RETAILERS = (
-    "Boots",
-    "Goop",
-)
+PLAYWRIGHT_RETAILERS = ("Goop",)
 
 
 def _last_known_factory(conn):
@@ -145,7 +143,6 @@ def run() -> int:
             pw_browser = pw_runtime.chromium.launch(headless=True)
         playwright_checkers = {
             "Goop": GoopChecker(browser=pw_browser),
-            "Boots": BootsChecker(),  # stub — no browser needed
         }
 
         if sheet is not None:

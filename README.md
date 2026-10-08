@@ -1,11 +1,11 @@
 # Megababe OOS Tracker
 
 Weekly out-of-stock check for 161 Megababe SKUs across 10 retailers. It runs
-itself every Monday, writes what it found to `data.db`, regenerates a static
+itself every Wednesday, writes what it found to `data.db`, regenerates a static
 dashboard at `docs/index.html`, and posts a Slack message when something moved.
 
 - **Dashboard:** GitHub Pages, served from `docs/` on `main`.
-- **Schedule:** Mondays, 14:00 UTC (`.github/workflows/weekly-check.yml`).
+- **Schedule:** Wednesdays, 13:00 UTC = 9am Eastern in summer, 8am in winter (`.github/workflows/weekly-check.yml`). The sheet is updated Mon–Tue; results get Wed–Thu for review.
 - **Cost:** none. No paid APIs, no hosting.
 
 New here? Read this file, then `RETAILER_KNOWLEDGE.md` when a specific
@@ -16,10 +16,10 @@ a dated dev journal — both are history, not instructions.
 
 ## The one thing you have to do
 
-**Keep the Google Sheet current.** Six retailers (Target, Walmart, ASOS, CVS,
-Nordstrom, Anthropologie — 111 SKUs) block automated checking hard enough that
+**Keep the Google Sheet current.** Seven retailers (Target, Walmart, ASOS, CVS,
+Nordstrom, Anthropologie, Boots — 116 SKUs) block automated checking hard enough that
 a person has to look. You check them by hand and log what you see; the tracker
-reads your sheet. Update it before Monday's run.
+reads your sheet. Update it before Wednesday's run. Owner since Oct 2026: Savannah (handoff guide: https://claude.ai/code/artifact/30bbcf3b-31f9-4080-b062-5afff68335df).
 
 The sheet is the **2026 Retail OOS** workbook, published to the web as CSV.
 The tracker reads three columns and ignores the rest:
@@ -39,7 +39,7 @@ The tracker reads three columns and ignores the rest:
 
 The sheet has no "last checked" date, so the tracker can't tell a row you
 re-checked this week from one untouched since summer — whatever is in the
-sheet on Monday is recorded as that week's status. For the same reason the
+sheet on Wednesday is recorded as that week's status. For the same reason the
 dashboard's **Stale manual entries** section won't catch a sheet you forgot to
 update.
 
@@ -77,7 +77,7 @@ A full run takes a few minutes — most of it Playwright on Goop.
 In GitHub, the first two are repo **secrets**; `DASHBOARD_URL` is a repo
 **variable**. Settings → Secrets and variables → Actions.
 
-**To trigger a run without waiting for Monday:** Actions tab → Weekly stock
+**To trigger a run without waiting for Wednesday:** Actions tab → Weekly stock
 check → Run workflow. Do this after any change; don't trust the cron blind.
 
 ---
@@ -92,8 +92,7 @@ redirected) or `UNKNOWN` (loaded, but the signal was unclear).
 | Cult Beauty | 22 | httpx + JSON-LD |
 | Gee Beauty | 21 | One Shopify collection request |
 | Goop | 2 | Playwright + JSON-LD |
-| Boots | 5 | Not checked — reports `UNKNOWN` (see below) |
-| Target / Walmart / ASOS / CVS / Nordstrom / Anthropologie | 111 | Your Google Sheet |
+| Target / Walmart / ASOS / CVS / Nordstrom / Anthropologie / Boots | 116 | Your Google Sheet |
 
 ### Discounts
 
@@ -132,7 +131,6 @@ has a line per product with the raw signal the checker saw.
 | A manual product shows `UNKNOWN` | Its name in the sheet doesn't match `products.csv`. The top of the run log lists both sides of the mismatch |
 | Goop shows `ERROR` | Cloudflare's bot check caught it that week. Usually clears on the next run |
 | Gee Beauty slow or 429 | Rate limit. The checker already throttles and backs off; it resolves itself |
-| Boots always `UNKNOWN` | Correct. Boots PDPs are Incapsula-blocked and nobody has decided on a bypass. `UNKNOWN` is honest — it used to report `IN_STOCK`, which quietly laundered five unchecked SKUs into confirmed stock |
 | A product shows OOS but the site says otherwise | Check `url_quality` in `products.csv`. Anything other than `pdp` never gets checked properly and is surfaced on the dashboard under **URLs to fix** |
 | Everything at one retailer flips OOS at once | Suspect the scraper, not the retailer. The dashboard's reconciled-OOS marker tells you whether it came from the brand page |
 
@@ -163,7 +161,7 @@ nothing changed.
   available online = in stock, per the user). It works from a laptop, but the
   API returns HTTP 435 (PerimeterX) to GitHub's runners — confirmed on a real
   run 2026-10-07 — so it isn't wired into the weekly job.
-- **Boots is unchecked** (5 SKUs), pending a decision on Incapsula bypass.
+- **Boots moved to the sheet on 2026-10-08** (5 SKUs). Its PDPs are Incapsula-blocked and its brand page shows no stock state, so it had reported `UNKNOWN` since August. `checkers/boots.py` is kept but unwired.
 - **Discount tracking covers 45 of 161 SKUs** — Gee Beauty (CAD), Cult Beauty
   (EUR) and Goop (USD), the retailers whose pages publish a price. The manual sheet has no price column and the blocked retailers have
   no readable page, so the rest stay unpriced.
